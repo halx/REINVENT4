@@ -9,7 +9,7 @@ import torch.utils.data as tud
 from reinvent.models.linkinvent.dataset.dataset import Dataset
 from reinvent.runmodes.utils.helpers import set_torch_device
 from tests.test_data import WARHEAD_PAIR
-from tests.models.unit_tests.linkinvent.fixtures import mocked_linkinvent_model
+from tests.models.unit_tests.linkinvent.RNN.fixtures import mocked_linkinvent_model
 
 
 @pytest.mark.usefixtures("device")
