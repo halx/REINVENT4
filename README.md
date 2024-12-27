@@ -84,11 +84,11 @@ use friendly.  JSON can be used too, add `-f json`, but a specialised editor is
 recommended as the format is very sensitive to minor changes.
 
 Sample configuration files for all run modes are
-located in `config/toml` in the repository and file paths in these files would need to be
+located in `configs/toml` in the repository and file paths in these files would need to be
 adjusted to your local installation.  In particular, ready made prior models are
 located in `priors` and you would choose a model and the
 appropriate run mode depending on the research problem you are trying to address.
-There is additional information in `config/toml` in several `*.md` files with
+There is additional information in `configs/toml` in several `*.md` files with
 instructions on how to configure the TOML file.  Internal priors can be referenced with a
 dot notation (see `reinvent/prior_registry.py`).
 
@@ -96,9 +96,9 @@ dot notation (see `reinvent/prior_registry.py`).
 Tutorials / `Jupyter` notebooks
 -------------------------------
 
-Basic instructions can be found in the comments in the config examples in `config/toml`.
+Basic instructions can be found in the comments in the config examples in `configs/toml`.
 
-Notebooks are provided in the `notebook/` directory.  Please note that we
+Notebooks are provided in the `notebooks/` directory.  Please note that we
 provide the notebooks in jupytext "light script" format.  To work with the light
 scripts you will need to install jupytext.  A few other packages will come in handy too.
 
@@ -106,7 +106,7 @@ scripts you will need to install jupytext.  A few other packages will come in ha
 pip install jupytext mols2grid seaborn
 ```
 
-The Python files in `notebook/` can then be converted to a notebook e.g.
+The Python files in `notebooks/` can then be converted to a notebook e.g.
 
 ```shell
 jupytext -o Reinvent_demo.ipynb Reinvent_demo.py
