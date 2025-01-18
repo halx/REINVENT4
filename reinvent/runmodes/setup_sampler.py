@@ -64,6 +64,9 @@ def setup_sampler(model_type: str, config: dict, agent: ModelAdapter):
         if sample_strategy == "beamsearch":
             agent.model.set_beam_size(batch_size)
 
+    if model_type == "Reinvent":
+        agent.model.temperature = temperature
+
     sampling_model = getattr(samplers, f"{model_type}Sampler")
     sampler = sampling_model(
         agent,

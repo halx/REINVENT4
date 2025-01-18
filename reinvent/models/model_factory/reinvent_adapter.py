@@ -28,3 +28,6 @@ class ReinventAdapter(ModelAdapter):
         # NOTE: keep the sequences and nlls as Tensor as they are needed for
         #       later computations
         return SampleBatch(sequences, smilies, nlls)
+
+    def set_temperature(self, temperature: float = 1.0):
+        self.model.temperature = temperature

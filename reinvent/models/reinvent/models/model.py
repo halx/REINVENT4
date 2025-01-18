@@ -63,6 +63,7 @@ class Model:
         self._model_modes = ModelModeEnum()
         self.network = rnn.RNN(len(self.vocabulary), **network_params, device=self.device)
         self.set_mode(mode)
+        self._temperature = 1.0  # temperature for softmax in likelihood()
 
         self._nll_loss = tnn.NLLLoss(reduction="none")
 
@@ -145,6 +146,14 @@ class Model:
 
         return self.likelihood(padded_sequences)
 
+    @property
+    def temperature(self):
+        return _temperature
+
+    @temperature.setter
+    def temperature(self, value):
+        self._temperature = value
+
     def likelihood(self, sequences: torch.Tensor) -> torch.Tensor:
         """Retrieves the likelihood of a given sequence
 
@@ -155,7 +164,7 @@ class Model:
         """
 
         logits, _ = self.network(sequences[:, :-1])  # all steps done at once
-        log_probs = logits.log_softmax(dim=2)
+        log_probs = logits.log_softmax(dim=2) / self._temperature
 
         return self._nll_loss(log_probs.transpose(1, 2), sequences[:, 1:]).sum(dim=1)
 
