@@ -17,6 +17,14 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 
+try:
+    from iSIM.comp import calculate_isim
+    from iSIM.utils import binary_fps
+
+    have_isim = True
+except ImportError:
+    have_isim = False
+
 from .reports import RLTBReporter, RLCSVReporter, RLRemoteReporter, RLReportData
 from reinvent.runmodes.RL.data_classes import ModelState
 from reinvent.models.model_factory.sample_batch import SmilesState
@@ -52,6 +60,7 @@ class Learning(ABC):
         inception: Inception = None,
         responder_config: dict = None,
         tb_logdir: str = None,
+        tb_isim: bool = False,
     ):
         """Setup of the common framework"""
 
@@ -95,12 +104,17 @@ class Learning(ABC):
         self.tb_reporter = None
         self._setup_reporters(tb_logdir)
 
+        self.tb_isim = None
+
+        if have_isim:
+            self.tb_isim = tb_isim
+
         self.start_time = 0
 
     def optimize(self, converged: terminator_callable) -> bool:
         """Run the multistep optimization loop
 
-        Sample from the agent, score the SNILES, update the agent parameters.
+        Sample from the agent, score the SMILES, update the agent parameters.
         Log some key characteristics of the current step.
 
         :param converged: a callable that determines convergence
@@ -310,14 +324,23 @@ class Learning(ABC):
         fract_duplicate_smiles = num_duplicate_smiles / len(mask_duplicates)
 
         smilies = np.array(self.sampled.smilies)[mask_valid]
+
+        isim = None
+
+        if self.tb_isim:
+            fingerprints = binary_fps(smilies, fp_type="RDKIT", n_bits=None)
+            isim = calculate_isim(fingerprints, n_ary="JT")
+
         if self.prior.model_type == "Libinvent":
             smilies = normalize(smilies, keep_all=True)
+
         mask_idx = (np.argwhere(mask_valid).flatten(),)
 
         report_data = RLReportData(
             step=step_no,
             stage=self.stage_no,
             smilies=smilies,
+            isim=isim,  # Add isim to report_data
             scaffolds=scaffolds,
             sampled=self.sampled,
             score_results=score_results,

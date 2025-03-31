@@ -92,3 +92,6 @@ class RLTBReporter:
             self.reporter.add_image(
                 f"First {sample_size} Structures", image_tensor, step, dataformats="CHW"
             )  # channel, height, width
+
+        if data.isim:
+            self.reporter.add_scalar(f"iSIM: Average similarity", data.isim, step)
