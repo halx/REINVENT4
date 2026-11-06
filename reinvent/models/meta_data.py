@@ -32,11 +32,15 @@ class ModelMetaData:
     creation_date: float  # epoch e.g. time.time()
     date_format: str = "UNIX epoch"
     model_id_format: str = MODEL_ID_FORMAT
+    version: int = 1
     updates: List[Tuple] = field(default_factory=list)  # list of epochs
     comments: List[str] = field(default_factory=list)  # arbitrary comment e.g. user annotation
 
     def as_dict(self):
         return asdict(self)
+
+    def check_valid_hash(self, save_dict: dict) -> bool:
+        return check_valid_hash(save_dict)
 
 
 def update_model_data(save_dict: dict, comment: str = "", write_update: bool = True) -> dict:

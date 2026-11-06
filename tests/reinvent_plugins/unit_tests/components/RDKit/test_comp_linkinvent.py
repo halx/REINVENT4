@@ -1,7 +1,5 @@
 import numpy as np
 
-from rdkit.Chem import Descriptors
-
 from reinvent_plugins.components.RDKit.comp_linkinvent import FragmentQed
 from reinvent_plugins.components.RDKit.comp_linkinvent import FragmentMolecularWeight
 from reinvent_plugins.components.RDKit.comp_linkinvent import FragmentTPSA
@@ -157,6 +155,7 @@ def test_all_failures_are_flagged_as_systemic(caplog):
 def test_empty_batch_does_not_flag_systemic_failure(caplog):
     # an empty batch is not a failure and must not trigger the
     # systemic-failure flag (issue #333)
+    from rdkit.Chem import Descriptors
     from reinvent_plugins.components.RDKit.comp_linkinvent import compute_scores
 
     with caplog.at_level("ERROR"):

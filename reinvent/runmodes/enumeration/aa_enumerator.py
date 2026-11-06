@@ -1,4 +1,4 @@
-#from __future__ import annotations
+# from __future__ import annotations
 """The Pepinvent enumeration module"""
 
 __all__ = ["AAEnumerator"]
@@ -27,19 +27,20 @@ logger = logging.getLogger(__name__)
 
 class AAEnumerator:
     """Carry out enumeration for Peptides"""
+
     def __init__(self, input_config: AAEnumerationConfig):
         self.config = input_config
 
         aa_library_filename = os.path.abspath(input_config.parameters.amino_acid_library_file)
         self.library = self._load_library(aa_library_filename)
-        self.fillers = list(self.library.keys()) # get amino acid names from the library
+        self.fillers = list(self.library.keys())  # get amino acid names from the library
 
         peptide_filename = os.path.abspath(input_config.parameters.smiles_file)
-        #reader = read_data(peptide_filename, smiles_column='0', actions=None)
+        # reader = read_data(peptide_filename, smiles_column='0', actions=None)
         self.input_smilies = read_smiles_csv_file(peptide_filename, 0)
         logger.info(f"Input peptide read from file {input_config.parameters.smiles_file}")
 
-        #self.iterator = self._create_iterator(reader.smilies)
+        # self.iterator = self._create_iterator(reader.smilies)
         self.iterator = self._create_iterator(self.input_smilies)
 
     def _create_iterator(self, smilies: List[str]) -> itertools.product:
@@ -66,7 +67,7 @@ class AAEnumerator:
         library_data = pd.read_csv(file_path)
         library_data = library_data[[names_column, smiles_column]]
         library_data = library_data.set_index(names_column).to_dict()[smiles_column]
-        library_data = {k.strip(): v.strip() for k, v in library_data.items()} # clean whitespace
+        library_data = {k.strip(): v.strip() for k, v in library_data.items()}  # clean whitespace
         logger.info("Amino acid library loaded successfully")
         return library_data
 
@@ -80,15 +81,17 @@ class AAEnumerator:
         start = 0
         stop = batch_size
         logger.info(f"Sampling {batch_size} peptides")
-        
-        aa_smi_sampled = list(map(self._convert_to_smiles_output, itertools.islice(self.iterator, start, stop)))
-        sample_batch_input =  self.input_smilies * batch_size
+
+        aa_smi_sampled = list(
+            map(self._convert_to_smiles_output, itertools.islice(self.iterator, start, stop))
+        )
+        sample_batch_input = self.input_smilies * batch_size
         fake_nlls = torch.zeros(batch_size)
-        
+
         sampled = SampleBatch(items1=sample_batch_input, items2=aa_smi_sampled, nlls=fake_nlls)
 
         mols, sampled = self._join_fragments(sampled)
-           
+
         sampled.smilies, sampled.states = validate_smiles(
             mols, sampled.smilies, isomeric=True, return_original_smiles=True
         )
@@ -103,8 +106,8 @@ class AAEnumerator:
         else:
             aa_smiles = [self.library.get(idx, "") for idx in aa_ids]
             aa_smiles = [aa[:-1] for aa in aa_smiles]
-            aa_output = '|'.join(aa_smiles)
-        
+            aa_output = "|".join(aa_smiles)
+
         return aa_output
 
     def _join_fragments(self, sequences: SampleBatch) -> Tuple[List[Chem.rdchem.Mol], SampleBatch]:
@@ -132,13 +135,13 @@ class AAEnumerator:
                 mol, complete_smiles = self._create_complete_mol(sample)
                 sample.smiles = complete_smiles
             # The number of fillers generated is equal to the number of masked slots
-            else: #elif num_fillers == num_mask:
+            else:  # elif num_fillers == num_mask:
                 mol, complete_smiles = self._create_complete_mol(sample)
                 sample.smiles = complete_smiles
 
             mols.append(mol)
             samples.append(sample)
-        
+
         sampled = SampleBatch.from_list(samples)
 
         return mols, sampled
@@ -153,12 +156,13 @@ class AAEnumerator:
 
         return Chem.rdmolfiles.MolFromSmiles(complete_smiles), complete_smiles
 
+
 def read_smiles_csv_file(
-        filename: str,
-        columns: Union[int, slice],
-        delimiter: str = "\t",
-        actions: List[smiles_func] = None,
-        remove_duplicates: bool = False,
+    filename: str,
+    columns: Union[int, slice],
+    delimiter: str = "\t",
+    actions: List[smiles_func] = None,
+    remove_duplicates: bool = False,
 ) -> Union[List[str], List[Tuple]]:
     """Read a SMILES column from a CSV file
 
@@ -171,12 +175,13 @@ def read_smiles_csv_file(
     :returns: a list of SMILES or a list of a tuple of SMILES
     """
 
-    if filename.endswith(".csv"):
+    lower = filename.lower()
+    if lower.endswith(".csv"):
         header = True
-    elif filename.endswith(".smi"):
+    elif lower.endswith(".smi"):
         header = False
     else:
-        raise RuntimeError(f"Unknown file format: {filename}")
+        raise RuntimeError(f"Unknown file format: {filename} (expected .csv or .smi)")
     # reader = TabFileReader(filename, header=header, actions=actions, smiles_column='')
     # reader.read()
     #

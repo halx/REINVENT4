@@ -55,7 +55,13 @@ def setup_sampler(model_type: str, config: dict, agent: ModelAdapter):
         if sample_strategy == "beamsearch":
             agent.model.set_beam_size(batch_size)
 
-    sampling_model = getattr(samplers, f"{model_type}Sampler")
+    sampling_model = getattr(samplers, f"{model_type}Sampler", None)
+
+    if sampling_model is None:
+        msg = f"No sampler found for model type '{model_type}'"
+        logger.critical(msg)
+        raise RuntimeError(msg)
+
     sampler = sampling_model(
         agent,
         batch_size=batch_size,

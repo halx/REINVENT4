@@ -9,8 +9,16 @@ from reinvent.utils import setup_logger, CsvFormatter, config_parse, get_tokens_
 from reinvent.runmodes import Handler, RL, create_adapter
 from reinvent.runmodes.setup_sampler import setup_sampler
 from reinvent.runmodes.RL.data_classes import ModelState
+from reinvent.runmodes.RL.memories.diversity_filter import DiversityFilter
 from reinvent.runmodes.utils import disable_gradients
-from .setup import create_packages, setup_diversity_filter, setup_intrinsic_penalty, setup_inception, setup_reward_strategy
+from .setup import (
+    create_package,
+    setup_diversity_filter,
+    setup_intrinsic_penalty,
+    setup_inception,
+    setup_reward_strategy,
+)
+from .relevance import AGGREGATORS
 from .validation import RLConfig
 
 logger = logging.getLogger(__name__)
@@ -81,10 +89,22 @@ def run_staged_learning(
     )
     agent = adapter
 
+    agent_metadata = agent_save_dict.get("metadata")
+    stereo = (
+        agent_metadata.get("supports_stereochemistry", False)
+        if isinstance(agent_metadata, dict)
+        else getattr(agent_metadata, "supports_stereochemistry", False)
+    )
+    if stereo and not parameters.isomeric_smiles:
+        logger.info(
+            "Overriding isomeric_smiles=True from agent model metadata (supports_stereochemistry)"
+        )
+        parameters.isomeric_smiles = True
+
     if model_type != agent_model_type:
-        msg = f"Inconsistent model types: prior is {model_type} agent is {agent_model_type}"
-        logger.critical(msg)
-        raise RuntimeError(msg)
+        raise RuntimeError(
+            f"Inconsistent model types: prior is {model_type} agent is {agent_model_type}"
+        )
 
     logger.info(f"Using generator {model_type}")
     logger.info(f"Prior read from {prior_model_filename}")
@@ -95,19 +115,41 @@ def run_staged_learning(
     if parameters.smiles_file:
         allowed_tokens = get_tokens_from_vocabulary(agent.vocabulary)
         smilies = config_parse.read_smiles_csv_file(parameters.smiles_file, 0, allowed_tokens)
+
+        if not smilies:
+            raise RuntimeError(f"No valid SMILES read from {parameters.smiles_file}")
+
         logger.info(f"Input molecules/fragments read from file {parameters.smiles_file}")
 
     sampler, _ = setup_sampler(model_type, parameters.model_dump(), agent)
-    reward_strategy = setup_reward_strategy(config.learning_strategy, agent)
+    reward_strategy = setup_reward_strategy(config.learning_strategy, agent, config.inception)
 
     global_df_only = False
     intrinsic_penalty = None
+    diversity_filter: DiversityFilter | None = None
 
     if parameters.use_checkpoint and "staged_learning" in agent_save_dict:
         logger.info(f"Using diversity filter from {agent_model_filename}")
         diversity_filter = agent_save_dict["staged_learning"]["diversity_filter"]
+        if not isinstance(diversity_filter, DiversityFilter):
+            logger.warning(
+                f"Loaded diversity filter is not an instance of DiversityFilter: "
+                f"{type(diversity_filter)}. Ignoring."
+            )
+            diversity_filter = None
+    elif parameters.use_checkpoint:
+        logger.warning(
+            f"use_checkpoint=True but {agent_model_filename} contains no prior checkpoint "
+            f"data ('staged_learning' key missing). Starting with a fresh diversity filter."
+        )
+        diversity_filter = None
     elif config.diversity_filter:
-        diversity_filter = setup_diversity_filter(config.diversity_filter, rdkit_smiles_flags2)
+        diversity_filter = setup_diversity_filter(
+            config.diversity_filter,
+            device,
+            prior_model_filename,
+            rdkit_smiles_flags2,
+        )
         global_df_only = True
     elif config.intrinsic_penalty:
         intrinsic_penalty = setup_intrinsic_penalty(
@@ -115,7 +157,7 @@ def run_staged_learning(
             device,
             prior_model_filename,
             rdkit_smiles_flags2,
-        )    
+        )
 
     if parameters.purge_memories:
         logger.info("Purging diversity filter memories after each stage")
@@ -126,26 +168,38 @@ def run_staged_learning(
 
     # Inception only set up here for the very first step
     if config.inception:  # and model_type == "Reinvent":
-        inception = setup_inception(config.inception, prior)
+        inception = setup_inception(config.inception, diversity_filter, prior)
 
     if inception is None and model_type == "Reinvent":
         logger.warning("Inception disabled but may speed up convergence")
-
-    packages = create_packages(reward_strategy, stages, rdkit_smiles_flags2)
 
     summary_csv_prefix = parameters.summary_csv_prefix
 
     # FIXME: is there a sensible default, this is only needed by Mol2Mol
     distance_threshold = parameters.distance_threshold
 
-    model_learning = getattr(RL, f"{model_type}Learning")
+    model_learning = getattr(RL, f"{model_type}Learning", None)
+
+    if model_learning is None:
+        raise RuntimeError(f"No RL learning class found for model type '{model_type}'")
 
     if callable(write_config):
         write_config(config.model_dump())
 
+    # --- performance monitoring state initialisation goes here ---
+
     with Handler() as handler:
-        for run, package in enumerate(packages):
+        for run, stage in enumerate(stages):
             stage_no = run + 1
+
+            # --- HOOK: dynamic parameter adjustment (e.g. modify stage.max_steps,
+            #     stage.scoring, diversity filter params) based on prior-stage
+            #     performance metrics captured at the end of the previous iteration ---
+
+            package = create_package(
+                reward_strategy, stage, device, prior_model_filename, rdkit_smiles_flags2
+            )
+
             csv_filename = f"{summary_csv_prefix}_{stage_no}.csv"
 
             setup_logger(
@@ -168,6 +222,14 @@ def run_staged_learning(
                 state = ModelState(agent, package.diversity_filter)
                 logger.debug(f"Using stage DF")
 
+            # stage overrides the global loss-modulation aggregation
+            lm_aggregation = stage.loss_modulation_aggregation or config.loss_modulation_aggregation
+            if lm_aggregation not in AGGREGATORS:
+                raise ValueError(
+                    f"Unknown loss_modulation_aggregation '{lm_aggregation}', "
+                    f"expected one of {sorted(AGGREGATORS)}"
+                )
+
             optimize = model_learning(
                 max_steps=package.max_steps,
                 stage_no=stage_no,
@@ -184,6 +246,7 @@ def run_staged_learning(
                 tb_logdir=logdir,
                 tb_isim=parameters.tb_isim,
                 intrinsic_penalty=intrinsic_penalty,
+                loss_modulation_aggregation=lm_aggregation,
             )
 
             handler.out_filename = package.out_state_filename
@@ -194,6 +257,9 @@ def run_staged_learning(
 
             terminate = optimize(package.terminator)
             state = optimize.state
+
+            # --- HOOK: capture performance metrics (mean score, steps taken,
+            #     convergence rate) from this stage for use in the next iteration ---
 
             if state.diversity_filter and parameters.purge_memories:
                 logger.info(f"Purging diversity filter memories in stage {stage_no}")

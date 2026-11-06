@@ -3,7 +3,6 @@
 import sys
 import tomllib
 from dataclasses import asdict
-import time
 import datetime
 import uuid
 import pprint
@@ -15,7 +14,7 @@ except ImportError:
     torchinfo = None
 
 from reinvent import version
-from reinvent.models import meta_data
+from reinvent.models.meta_data2 import ModelMetaDataV2
 from reinvent.models.reinvent.models.model import Model
 from reinvent.models.reinvent.models.vocabulary import SMILESTokenizer, create_vocabulary
 from reinvent.chemistry.file_reader import FileReader
@@ -68,13 +67,25 @@ def create_model(
     pp_params = pprint.pformat(network_params, indent=4)
     logger.info(f"Setting hyper-parameters:\n{pp_params}")
 
-    metadata = meta_data.ModelMetaData(
-        creation_date=time.time(),
+    comment = metadata.get("comment", "")
+    update_log = []
+    if comment:
+        update_log = [
+            {
+                "timestamp": None,
+                "comment": comment,
+                "reinvent_version": version.__version__,
+                "prior_hash": None,
+            }
+        ]
+
+    metadata = ModelMetaDataV2(
         hash_id=None,
-        hash_id_format="",
-        model_id=uuid.uuid4(),
-        origina_data_source=metadata.get("data_source", "unknown"),
-        comments=[metadata.get("comment", "")],
+        model_id=str(uuid.uuid4()),
+        original_data_source=metadata.get("data_source", "unknown"),
+        supports_stereochemistry=metadata.get("supports_stereochemistry", False),
+        model_architecture=Model._model_type,
+        update_log=update_log,
     )
 
     pp_params = pprint.pformat(asdict(metadata), indent=4)

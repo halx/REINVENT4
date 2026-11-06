@@ -28,23 +28,38 @@ class Parameters:
     multiple endpoints and so all the parameters from each endpoint is
     collected into a list.  This is also true in cases where there is only one
     endpoint.
+
+    Each endpoint's ``smarts`` may be a single SMARTS string or a list of
+    SMARTS strings.  When a list is given the endpoint reports the aggregate
+    (total) number of substructure matches over all patterns in that list,
+    yielding a single output column.  This mirrors how e.g. TanimotoDistance
+    accepts a list of reference SMILES per endpoint.
     """
 
-    smarts: List[str]
+    smarts: List[str | List[str]]
 
 
 @add_tag("__component")
 class GroupCount:
     def __init__(self, params: Parameters):
-        self.patterns = []
+        # one list of compiled patterns per endpoint
+        self.patterns_per_endpoint = []
 
         for smarts in params.smarts:
-            pattern = Chem.MolFromSmarts(smarts)
+            if isinstance(smarts, str):
+                smarts = [smarts]
 
-            if pattern:
-                self.patterns.append(pattern)
+            patterns = []
 
-        if not self.patterns:
+            for smart in smarts:
+                pattern = Chem.MolFromSmarts(smart)
+
+                if pattern:
+                    patterns.append(pattern)
+
+            self.patterns_per_endpoint.append(patterns)
+
+        if not any(self.patterns_per_endpoint):
             raise ValueError(f"{__name__}: no valid SMARTS patterns found")
 
         self.number_of_endpoints = len(params.smarts)
@@ -53,15 +68,15 @@ class GroupCount:
     def __call__(self, mols: List[Chem.Mol]) -> np.array:
         scores = []
 
-        for pattern in self.patterns:
+        for patterns in self.patterns_per_endpoint:
             endpoint_scores = []
 
             for mol in mols:
                 if not mol:
                     endpoint_scores.append(np.nan)
                 else:
-                    matches = mol.GetSubstructMatches(pattern)
-                    endpoint_scores.append(len(matches))
+                    total = sum(len(mol.GetSubstructMatches(pattern)) for pattern in patterns)
+                    endpoint_scores.append(total)
 
             scores.append(np.array(endpoint_scores))
 

@@ -54,7 +54,7 @@ Installation
     conda create --name reinvent4 python=3.11
     conda activate reinvent4
     ```
-1. Change directory to the repository to install.  You will need to set the right processor type, see [PyTorch versions](https://pytorch.org/get-started/locally/). Make sure that the toolkit version (e.g. CUDA) is compatible with the hardware driver (e.g. NVIDIA) of your OS.  Linux supports CUDA (e.g. "cu126"), AMD ROCm (e.g. "rocm6.4"), Intel XPU ("xpu") and CPU. Windows supports CUDA, XPU and CPU.  Newer Apple chips e.g. M5 are supported by PyTorch's MPS backend (use "mac" as processor type). Optionally, you can select dependencies "openeye" (for ROCS; you need to obtain your own license), "chemprop1" for Chemprop v1, "isim" for similarity tracking in TensorBoard or "none" to skip all.  The default is installation of "all" dependencies.  See the help text from the install script for details.
+1. Change directory to the repository to install.  You will need to set the right processor type, see [PyTorch versions](https://pytorch.org/get-started/locally/). Make sure that the toolkit version (e.g. CUDA) is compatible with the hardware driver (e.g. NVIDIA) of your OS.  Linux supports CUDA (e.g. "cu126"), AMD ROCm (e.g. "rocm6.4"), Intel XPU ("xpu") and CPU. Windows supports CUDA, XPU and CPU.  Newer Apple chips e.g. M5 are supported by PyTorch's MPS backend (use "mac" as processor type). Optionally, you can select dependencies "openeye" (for ROCS; you need to obtain your own license), "chemprop1" for Chemprop v1, "isim" for similarity tracking in TensorBoard, "bitbirch" for the BitBirch diversity filter and IS-weighted inception (requires `bblean`), or "none" to skip all.  The default is installation of "all" dependencies.  See the help text from the install script for details.
     ```shell
     python install.py --help
 
@@ -84,6 +84,7 @@ Installation
     cd REINVENT4
     uv sync                   # core dependencies
     uv sync --extra isim      # + iSIM similarity tracking in TensorBoard
+    uv sync --extra bitbirch  # + BitBirch diversity filter and IS-weighted inception
     uv sync --extra all       # + OpenEye ROCS (requires a license)
     ```
 1. Test the tool.
@@ -178,10 +179,14 @@ repository contains a [contrib](https://github.com/MolecularAI/REINVENT4/tree/ma
 1. Place a file whose name starts with `comp_*` into `reinvent_plugins/components` or subdirectories.   Files with different names will be ignored i.e. not imported. The directory will be searched recursively so structure your code as needed but directory/package names must be unique.
 1. Tag the scoring component class(es) in that file with the @add\_tag decorator.  More than one component class can be added to the same *comp\_* file. See existing code.
 1. Tag at most one dataclass for parameters in the same file, see existing code.  This is optional.
+1. The scoring component must return a `ComponentResults` object, which must include at least one score and optional metadata.
+1. If the scoring component provides more than one endpoint, you must set the `number_of_endpoints` attribute appropriately. If you set metadata fields, add them to the  `metadata_keys` attribute. 
 1. Set or add `/top/dir/somewhere` to the `PYTHONPATH` environment variable or use any other mechanism to extend `sys.path`.
 1. The scoring component should now automatically be picked up by REINVENT.
 
-Ensure that the component can be important. The log file will write out an error if not.  Check directly if import is possible:
+A simple example component is provided at `reinvent_plugins/components/comp_example.py` demonstrating the minimal structure.
+
+Ensure that the component can be imported. The log file will write out an error if not.  Check directly if import is possible:
 
 ```Python
 from reinvent_plugins.components import comp_myscorer

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 __all__ = [
+    "ISWeightConfig",
     "RLReward",
     "dap_strategy",
     "mascof_strategy",
@@ -14,6 +15,7 @@ __all__ = [
 ]
 
 import logging
+from dataclasses import dataclass
 from typing import Callable, Optional, TYPE_CHECKING
 import warnings
 
@@ -162,18 +164,40 @@ def mauli_reinforce_strategy(
     return loss, reward
 
 
+@dataclass
+class ISWeightConfig:
+    """Importance-sampling weight correction for inception replay.
+
+    :param weighted_scores: apply IS weight correction to inception replay scores
+    :param weight_clip: clamp log IS weights to [-clip, clip] before softmax; None disables
+    :param weight_temperature: temperature divisor for log IS weights
+    """
+
+    weighted_scores: bool = False
+    weight_clip: float | None = None
+    weight_temperature: float = 1.0
+
+
 class RLReward:
-    def __init__(self, optimizer, sigma=120, strategy: Callable = dap_strategy):
+    def __init__(
+        self,
+        optimizer,
+        sigma=120,
+        strategy: Callable = dap_strategy,
+        is_weight_config: ISWeightConfig | None = None,
+    ):
         """Run the chosen RL reward strategy to optimize the model.
 
         :param optimizer: torch optimizer for the network
         :param strategy: a callable to compute the loss function
         :param sigma: the scaling hyperparameter
+        :param is_weight_config: IS weight correction settings for inception replay
         """
 
         self._optimizer = optimizer
         self._sigma = sigma
         self._strategy = strategy
+        self._is_weight_config = is_weight_config
 
     def __call__(
         self,
@@ -184,6 +208,7 @@ class RLReward:
         mask_idx: np.ndarray,
         inception: Optional[Inception],
         agent: Optional[ModelAdapter],
+        weights: Optional[np.ndarray] = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Entry point to run the learning strategy.
 
@@ -194,6 +219,7 @@ class RLReward:
         :param mask_idx: indices of the valid SMILES, needed for inception
         :param inception: instance of the inception memory
         :param agent: the agent network model, needed for inception
+        :param weights: optional per-molecule relevance for loss modulation (NaN = neutral)
         :returns: the negative log likelihoods for agent, prior and augmented, and the mean loss
         """
 
@@ -213,27 +239,75 @@ class RLReward:
             self._sigma,
         )
 
+        batch_weights = None
+        if weights is not None:
+            batch_weights = torch.as_tensor(np.asarray(weights, dtype=float)).to(prior_lls)[
+                ~nan_idx
+            ]
+
         if inception is not None:
-            _orig_smilies, _scores, _prior_lls = inception(
-                np.array(orig_smilies)[mask_idx], scores_nonnan[mask_idx], prior_lls[mask_idx]
+            # mask_idx is in the original (unfiltered) batch space, so intersect it
+            # with the non-NaN mask in that same space before indexing.
+            valid_mask = np.zeros(len(orig_smilies), dtype=bool)
+            valid_mask[mask_idx] = True
+            keep_mask = valid_mask & ~nan_idx.cpu().numpy()  # valid AND scored, original space
+
+            to_inception_relevance = (
+                np.asarray(weights, dtype=float)[keep_mask] if weights is not None else None
+            )  # relevance for the sampled molecules possibly added to the inception batch
+
+            sampled = inception(
+                np.array(orig_smilies)[keep_mask],
+                scores[keep_mask],
+                (-prior_nlls)[keep_mask],
+                (-agent_nlls)[keep_mask],
+                agent,
+                relevance=to_inception_relevance,
             )
 
-            # compute the agent NLLs for the _current_ state of the agent
-            lls = agent.likelihood_smiles(_orig_smilies)
+            if (
+                sampled is not None
+            ):  # None when the memory is still empty (e.g. first batch gated out)
+                _orig_smilies, _scores, _prior_lls, _stored_agent_lls, _rel_from_inception = sampled
 
-            if isinstance(lls, torch.Tensor):  # Reinvent
-                _agent_lls = -lls
-            else:  # all other models
-                _agent_lls = -lls.likelihood
+                # compute the agent NLLs for the _current_ state of the agent
+                lls = agent.likelihood_smiles(_orig_smilies)
 
-            inception_loss, _ = self._strategy(
-                _agent_lls,
-                torch.tensor(_scores).to(_agent_lls),
-                torch.tensor(_prior_lls).to(_agent_lls),
-                self._sigma,
-            )
+                if isinstance(lls, torch.Tensor):  # Reinvent
+                    _agent_lls = -lls
+                else:  # all other models
+                    _agent_lls = -lls.likelihood
 
-            loss = torch.cat((loss, inception_loss), 0)
+                _scores_t = torch.tensor(_scores).to(_agent_lls)
+
+                if self._is_weight_config is not None and self._is_weight_config.weighted_scores:
+                    cfg = self._is_weight_config
+                    _stored_lls_t = torch.tensor(_stored_agent_lls).to(_agent_lls)
+                    log_w = (_agent_lls.detach() - _stored_lls_t) / cfg.weight_temperature
+                    if cfg.weight_clip is not None:
+                        log_w = log_w.clamp(-cfg.weight_clip, cfg.weight_clip)
+                    w = torch.softmax(log_w, dim=0)
+                    _scores_t = _scores_t * w * len(w)  # mean-preserving reweighting
+
+                inception_loss, _ = self._strategy(
+                    _agent_lls,
+                    _scores_t,
+                    torch.tensor(_prior_lls).to(_agent_lls),
+                    self._sigma,
+                )
+
+                loss = torch.cat((loss, inception_loss), 0)
+
+                if batch_weights is not None:
+                    inception_w = torch.tensor(
+                        [np.nan if c is None else float(c) for c in _rel_from_inception],
+                        dtype=batch_weights.dtype,
+                        device=batch_weights.device,
+                    )
+                    batch_weights = torch.cat((batch_weights, inception_w), 0)
+
+        if batch_weights is not None:
+            loss = self._modulate(loss, batch_weights)
 
         loss = loss.mean()
 
@@ -243,3 +317,18 @@ class RLReward:
         self._optimizer.step()
 
         return agent_lls, prior_lls, augmented_lls, loss
+
+    @staticmethod
+    def _modulate(loss: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
+        """Rescale per-molecule loss by mean-1 normalised relevance; NaN weights stay neutral."""
+        finite = torch.isfinite(weights)
+
+        if not bool(finite.any()):
+            return loss
+
+        eps = torch.finfo(loss.dtype).eps
+        wbar = weights[finite].mean().clamp_min(eps)
+        norm = torch.ones_like(loss)
+        norm[finite] = weights[finite] / wbar
+
+        return loss * norm

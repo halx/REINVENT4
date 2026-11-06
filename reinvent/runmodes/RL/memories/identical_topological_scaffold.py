@@ -1,17 +1,10 @@
-from __future__ import annotations
-from typing import List, Optional
+"""Backward-compatibility shim for checkpoints saved before the filters/ refactoring.
 
-import numpy as np
+Old checkpoints pickle diversity filter objects under the ``memories.*`` module
+path.  Re-exporting the concrete class here lets torch.load unpickle those
+objects without error.
+"""
 
-from .diversity_filter import DiversityFilter
+from .filters.identical_topological_scaffold import IdenticalTopologicalScaffold
 
-
-class IdenticalTopologicalScaffold(DiversityFilter):
-    """Penalizes compounds based on exact Topological Scaffolds previously generated."""
-
-    def update_score(
-        self, scores: np.ndarray, smilies: List[str], mask: np.ndarray
-    ) -> Optional[List]:
-        """Compute the score"""
-
-        return self.score_scaffolds(scores, smilies, mask, topological=True)
+__all__ = ["IdenticalTopologicalScaffold"]

@@ -25,7 +25,7 @@ def test_compute_transform_with_sigmoid_returns_bounded_scores():
 
     result = compute_transform(
         component_type="molecularweight",
-        params=(["MW"], mw, [transform], [1.0]),
+        params=(["MW"], mw, [transform], [1.0], [False]),
         smilies=SMILIES,
         cache=cache,
         valid_mask=VALID_MASK,
@@ -43,7 +43,7 @@ def test_compute_transform_with_no_transform_is_raw_scores():
 
     result = compute_transform(
         component_type="molecularweight",
-        params=(["MW"], mw, [None], [1.0]),
+        params=(["MW"], mw, [None], [1.0], [False]),
         smilies=SMILIES,
         cache=cache,
         valid_mask=VALID_MASK,
@@ -62,7 +62,7 @@ def test_compute_transform_masks_invalid_smiles():
 
     result = compute_transform(
         component_type="molecularweight",
-        params=(["MW"], mw, [None], [1.0]),
+        params=(["MW"], mw, [None], [1.0], [False]),
         smilies=smilies,
         cache=cache,
         valid_mask=valid_mask,
@@ -78,7 +78,7 @@ def test_compute_transform_populates_cache():
 
     compute_transform(
         component_type="molecularweight",
-        params=(["MW"], mw, [None], [1.0]),
+        params=(["MW"], mw, [None], [1.0], [False]),
         smilies=SMILIES,
         cache=cache,
         valid_mask=VALID_MASK,
@@ -93,14 +93,14 @@ def test_compute_transform_uses_cache_on_second_call():
 
     result1 = compute_transform(
         component_type="molecularweight",
-        params=(["MW"], mw, [None], [1.0]),
+        params=(["MW"], mw, [None], [1.0], [False]),
         smilies=SMILIES,
         cache=cache,
         valid_mask=VALID_MASK,
     )
     result2 = compute_transform(
         component_type="molecularweight",
-        params=(["MW"], mw, [None], [1.0]),
+        params=(["MW"], mw, [None], [1.0], [False]),
         smilies=SMILIES,
         cache=cache,
         valid_mask=VALID_MASK,

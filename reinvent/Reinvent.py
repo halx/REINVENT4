@@ -2,6 +2,7 @@
 """Main entry point into Reinvent."""
 
 from __future__ import annotations
+import logging
 import os
 import sys
 
@@ -15,6 +16,8 @@ from rdkit import rdBase
 import rdkit
 import torch
 
+import pydantic
+
 from reinvent.utils import (
     parse_command_line,
     set_seed,
@@ -27,6 +30,8 @@ from reinvent.utils import (
     report_resource_usage,
     get_accelerator,
     report_hardware,
+    fatal,
+    format_validation_error,
 )
 
 from reinvent import version, runmodes
@@ -67,7 +72,8 @@ def main(args: Any):
     else:
         fmt = args.config_format
 
-    logger.info(f"Reading run configuration from {args.config_filename} using format {fmt}")
+    config_source = args.config_filename or "stdin"
+    logger.info(f"Reading run configuration from {config_source} using format {fmt}")
     input_config = config_parse.read_config(args.config_filename, fmt)
     val_config = ReinventConfig(**input_config)
 
@@ -75,14 +81,18 @@ def main(args: Any):
         enable_rdkit_log(args.enable_rdkit_log_levels)
 
     run_type = val_config.run_type
-    runner = getattr(runmodes, f"run_{run_type}")
+    runner = getattr(runmodes, f"run_{run_type}", None)
 
-    have_version = getattr(val_config, "version", version.__config_version__)
+    if runner is None:
+        from reinvent.validation import ReinventConfig as _RC
 
-    if have_version < version.__config_version__:
-        msg = f"Need at least version 4.  Input file is for version {have_version}."
-        logger.fatal(msg)
-        raise RuntimeError(msg)
+        valid = list(_RC.model_fields["run_type"].annotation.__args__)
+        raise RuntimeError(f"Unknown run_type '{run_type}'. Valid choices: {', '.join(valid)}")
+
+    if val_config.version < version.__config_version__:
+        raise RuntimeError(
+            f"Need at least version 4.  Input file is for version {val_config.version}."
+        )
 
     if dotenv_loaded:
         if args.dotenv_filename:
@@ -97,7 +107,10 @@ def main(args: Any):
     logger.info(f"PyTorch version {torch.__version__} git {torch.version.git_version}")
 
     accelerator, accelerator_runtime = get_accelerator()
-    logger.info(f"PyTorch compiled with {accelerator}" + (f" version {accelerator_runtime}" if accelerator_runtime else ""))
+    logger.info(
+        f"PyTorch compiled with {accelerator}"
+        + (f" version {accelerator_runtime}" if accelerator_runtime else "")
+    )
 
     logger.info(f"RDKit version {rdkit.__version__}")
     logger.info(f"Platform {platform.platform()}")
@@ -167,7 +180,44 @@ def main_script():
     """Main entry point from the command line"""
 
     args = parse_command_line()
-    main(args)
+
+    # Pre-logger checks: report immediately, before the log file is opened.
+    if args.config_filename and not args.config_filename.exists():
+        fatal(f"Config file not found: {args.config_filename}\n" "Check the path and try again.")
+
+    if args.log_filename:
+        from pathlib import Path
+
+        log_parent = Path(args.log_filename).parent
+        if not log_parent.exists():
+            fatal(
+                f"Log file directory does not exist: {log_parent}\n"
+                "Create the directory or choose a different path with --log-filename."
+            )
+
+    try:
+        main(args)
+    except pydantic.ValidationError as exc:
+        # main() calls setup_logger() as its first action, so the logger is
+        # configured by the time any exception escapes — look it up so the
+        # same message that appears on stderr is also written to the log file.
+        fatal(format_validation_error(exc), log=logging.getLogger(__package__), exc_info=exc)
+    except FileNotFoundError as exc:
+        fatal(
+            f"File not found: {exc.filename}\n"
+            "Check that the file path in your configuration is correct.",
+            log=logging.getLogger(__package__),
+            exc_info=exc,
+        )
+    except (ValueError, RuntimeError) as exc:
+        fatal(str(exc), log=logging.getLogger(__package__), exc_info=exc)
+    except Exception as exc:
+        fatal(
+            f"Unexpected error: {type(exc).__name__}: {exc}\n"
+            "See the log file for the full traceback.",
+            log=logging.getLogger(__package__),
+            exc_info=exc,
+        )
 
 
 if __name__ == "__main__":

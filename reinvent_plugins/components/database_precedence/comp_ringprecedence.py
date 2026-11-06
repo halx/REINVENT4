@@ -88,6 +88,7 @@ class RingPrecedence:
     """
 
     def __init__(self, params: Parameters):
+        self.metadata_keys = ("highest_nll_ring",)
         self.database = json.load(open(params.database_file[0], "r"))
         self.make_generic = params.make_generic[0]
         self.nll_method = params.nll_method[0]
@@ -130,4 +131,4 @@ class RingPrecedence:
 
         empirical_ring_nll_scores = np.array(empirical_ring_nll_scores)
 
-        return [empirical_ring_nll_scores], {"highest_nll_ring": highest_nll_rings}
+        return [empirical_ring_nll_scores], {self.metadata_keys[0]: highest_nll_rings}

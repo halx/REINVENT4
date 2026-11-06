@@ -16,6 +16,10 @@ from collections import Counter
 import logging
 import logging.handlers
 
+import pydantic
+
+from reinvent.utils.errors import fatal, format_validation_error
+
 from rdkit import rdBase
 import polars as pl
 from tqdm import tqdm
@@ -266,7 +270,40 @@ def main_script():
     mp.set_start_method("spawn", force=True)
 
     args = parse_command_line()
-    main(args)
+
+    if not args.config_filename.exists():
+        fatal(f"Config file not found: {args.config_filename}\n" "Check the path and try again.")
+
+    if args.log_filename and not args.log_filename.parent.exists():
+        fatal(
+            f"Log file directory does not exist: {args.log_filename.parent}\n"
+            "Create the directory or choose a different path with --log-filename."
+        )
+
+    try:
+        main(args)
+    except pydantic.ValidationError as exc:
+        fatal(
+            format_validation_error(exc),
+            log=logging.getLogger(__package__),
+            exc_info=exc,
+        )
+    except FileNotFoundError as exc:
+        fatal(
+            f"File not found: {exc.filename}\n"
+            "Check that the file path in your configuration is correct.",
+            log=logging.getLogger(__package__),
+            exc_info=exc,
+        )
+    except (ValueError, RuntimeError) as exc:
+        fatal(str(exc), log=logging.getLogger(__package__), exc_info=exc)
+    except Exception as exc:
+        fatal(
+            f"Unexpected error: {type(exc).__name__}: {exc}\n"
+            "See the log file for the full traceback.",
+            log=logging.getLogger(__package__),
+            exc_info=exc,
+        )
 
 
 if __name__ == "__main__":

@@ -11,6 +11,12 @@ def get_pair_generator(pair_generator_name: str, *args, **kwargs) -> preprocessi
     """
 
     pgn = pair_generator_name.strip().capitalize()
-    pair_generator = getattr(preprocessing, f"{pgn}PairGenerator")
+    pair_generator = getattr(preprocessing, f"{pgn}PairGenerator", None)
+
+    if pair_generator is None:
+        valid = ["tanimoto", "mmp", "scaffold", "precomputed"]
+        raise RuntimeError(
+            f"Unknown pair generator '{pair_generator_name}'. " f"Valid choices: {', '.join(valid)}"
+        )
 
     return pair_generator(*args, **kwargs)

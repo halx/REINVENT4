@@ -2,7 +2,7 @@
 
 __all__ = ["TransformResults", "ScoreResults"]
 from dataclasses import dataclass
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 import numpy as np
 
@@ -17,6 +17,8 @@ class TransformResults:
     transformed_scores: List[np.ndarray]
     component_result: ComponentResults
     weight: float = 1.0
+    # per-endpoint relevance arrays for loss modulation, or None where not enabled/available
+    relevance: Optional[List[Optional[np.ndarray]]] = None
 
 
 @dataclass

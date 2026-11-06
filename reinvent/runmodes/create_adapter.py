@@ -14,6 +14,7 @@ import torch
 from reinvent import models
 from reinvent.utils import prior_registry
 from reinvent.models import meta_data
+from reinvent.models.meta_data2 import ModelMetaDataV2
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,12 @@ def create_adapter(dict_filename: str, mode: str, device: torch.device) -> tuple
     """
 
     dict_filename = resolve_model_filename(dict_filename)
-    save_dict = torch.load(dict_filename, map_location="cpu", weights_only=False)
+
+    try:
+        save_dict = torch.load(dict_filename, map_location="cpu", weights_only=False)
+    except Exception as exc:
+        raise RuntimeError(f"Failed to load model file '{dict_filename}': {exc}") from exc
+
     check_metadata(dict_filename, save_dict)
 
     if "model_type" in save_dict:
@@ -44,9 +50,7 @@ def create_adapter(dict_filename: str, mode: str, device: torch.device) -> tuple
     model_class = getattr(models, f"{model_type}Model", None)
 
     if not adapter_class or not model_class:
-        msg = f"Unknown model type: {model_type}"
-        logger.fatal(msg)
-        raise RuntimeError(msg)
+        raise RuntimeError(f"Unknown model type: {model_type}")
 
     model = model_class.create_from_dict(save_dict, mode, device)
     adapter = adapter_class(model)
@@ -76,9 +80,7 @@ def resolve_model_filename(name: str) -> str:
         filename = pathlib.Path(name).resolve()
 
     if not filename.exists() or not os.access(filename, os.R_OK):
-        msg = f"model file {filename} is not accessible"
-        logger.critical(msg)
-        raise RuntimeError(msg)
+        raise RuntimeError(f"model file {filename} is not accessible")
 
     return str(filename)  # torch.load does not like pathlib.Path
 
@@ -86,52 +88,71 @@ def resolve_model_filename(name: str) -> str:
 def check_metadata(dict_filename: str, save_dict: dict) -> None:
     """Check the metadata of the save dict from a model file.
 
-    CUrrently, only logs warnings or errors but does not terminate the run.
+    Handles four cases:
+      1. No "metadata" key (legacy prior without metadata)
+      2. "metadata" key present but None (malformed legacy model)
+      3. metadata stored as a plain dict (normal V1 or V2 serialised form)
+      4. metadata stored as a ModelMetaData / ModelMetaDataV2 object (legacy
+         models where the class instance was pickled directly)
+
+    Currently only logs warnings or errors but does not terminate the run.
 
     :param dict_filename: model pickle file with the save dict
     :param save_dict: the save dict
     """
 
-    if "metadata" in save_dict:
-        if save_dict["metadata"] is not None:
-            if isinstance(save_dict["metadata"], dict):
-                metadata = models.ModelMetaData(**save_dict["metadata"])
-            else:  # backward compatibility
-                metadata = save_dict["metadata"]
+    _stub = lambda: meta_data.ModelMetaData(
+        hash_id=None,
+        hash_id_format="",
+        model_id=uuid.uuid4().hex,
+        origina_data_source="unknown",
+        creation_date=time.time(),
+        comments=["REINVENT4"],
+    )
 
-            if not metadata.hash_id:
-                logger.warning(f"{dict_filename} does not contain a hash ID")
-            else:
-                valid = models.check_valid_hash(save_dict)
-                pp = pprint.PrettyPrinter(indent=2)
-                pp_dict = pp.pformat(metadata.as_dict())
+    raw = save_dict.get("metadata")
 
-                if valid:
-                    logger.info(f"{dict_filename} has valid hash:\n{pp_dict}")
-                else:
-                    logger.error(f"{dict_filename} has invalid hash:\n{pp_dict}")
+    # Case 1 & 2: absent or None — synthesise a minimal V1 stub so downstream
+    # code always finds a metadata object in save_dict.
+    if raw is None:
+        if "metadata" not in save_dict:
+            logger.warning(f"{dict_filename} does not contain metadata")
         else:
             logger.warning(f"{dict_filename} contains empty metadata")
 
-            save_dict["metadata"] = meta_data.ModelMetaData(
-                hash_id=None,
-                hash_id_format="",
-                model_id=uuid.uuid4().hex,
-                origina_data_source="unknown",
-                creation_date=time.time(),
-                comments=["REINVENT4"],
-            )
-    else:
-        logger.warning(f"{dict_filename} does not contain metadata")
+        save_dict["metadata"] = _stub()
+        return
 
-        save_dict["metadata"] = meta_data.ModelMetaData(
-            hash_id=None,
-            hash_id_format="",
-            model_id=uuid.uuid4().hex,
-            origina_data_source="unknown",
-            creation_date=time.time(),
-            comments=["REINVENT4"],
-        )
+    # Case 3: serialised as a plain dict
+    if isinstance(raw, dict):
+        version = raw.get("version", 1)
+        if version == 2:
+            raw = dict(raw)  # don't mutate save_dict
+            if "origina_data_source" in raw:
+                raw.setdefault("original_data_source", raw.pop("origina_data_source"))
+            raw.pop("updates", None)
+            raw.pop("comments", None)
+            metadata = ModelMetaDataV2(**raw)
+        else:
+            metadata = models.ModelMetaData(**raw)
+
+    # Case 4: stored as a class object (pickled directly, no serialisation)
+    elif isinstance(raw, ModelMetaDataV2):
+        metadata = raw
+    else:
+        metadata = raw  # V1 ModelMetaData object — backward compatibility
+
+    if not metadata.hash_id:
+        logger.warning(f"{dict_filename} does not contain a hash ID")
+    else:
+        valid = metadata.check_valid_hash(save_dict)
+        pp = pprint.PrettyPrinter(indent=2)
+        pp_dict = pp.pformat(metadata.as_dict())
+
+        if valid:
+            logger.info(f"{dict_filename} has valid hash:\n{pp_dict}")
+        else:
+            logger.error(f"{dict_filename} has invalid hash:\n{pp_dict}")
 
 
 def orig_style_priors(save_dict: dict) -> str:

@@ -17,10 +17,11 @@ num_layers = 3
 layer_size = 512
 dropout = 0.0
 layer_normalization = false
-standardize = true  # should be true to ensure data consistency
+standardize = false
 
 
 [metadata]  # meta data for the model, information about the data source
 
 data_source = "ChEMBL 33"
-comment = "This is a test"
+supports_stereochemistry = false
+comment = ""

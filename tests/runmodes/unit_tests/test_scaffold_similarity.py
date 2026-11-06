@@ -2,16 +2,18 @@
 
 import pytest
 
-from reinvent.runmodes.RL.memories.scaffold_similarity import ScaffoldSimilarity
+from reinvent.runmodes.RL.memories.filters import ScaffoldSimilarity
+from reinvent.runmodes.RL.memories.penalties import StepPenalty
 
-# Benzene and toluene — atom-pair Tanimoto similarity is moderate
 BENZENE = "c1ccccc1"
 TOLUENE = "Cc1ccccc1"
-CYCLOHEXANE = "C1CCCCC1"  # very different from benzene
+CYCLOHEXANE = "C1CCCCC1"
 
 
 def _make_filter(minsimilarity):
     return ScaffoldSimilarity(
+        penalty_function=StepPenalty(5),
+        intrinsic_reward=None,
         bucket_size=5,
         minscore=0.4,
         minsimilarity=minsimilarity,
@@ -40,15 +42,14 @@ def test_identical_scaffold_does_not_add_new_entry():
 
 
 def test_very_similar_scaffold_merged_at_low_threshold():
-    sf = _make_filter(minsimilarity=0.01)  # very permissive — almost anything merges
+    sf = _make_filter(minsimilarity=0.01)
     sf._find_similar_scaffold(BENZENE)
     result = sf._find_similar_scaffold(TOLUENE)
-    # at this threshold toluene should be merged into the benzene bucket
     assert result == BENZENE
 
 
 def test_dissimilar_scaffold_gets_new_bucket_at_high_threshold():
-    sf = _make_filter(minsimilarity=0.99)  # very strict — almost nothing merges
+    sf = _make_filter(minsimilarity=0.99)
     sf._find_similar_scaffold(BENZENE)
     result = sf._find_similar_scaffold(CYCLOHEXANE)
     assert result == CYCLOHEXANE

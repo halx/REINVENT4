@@ -200,7 +200,7 @@ def test_fetch_scores_returns_nan_for_missing_smiles():
     component_results = ComponentResults(scores=[np.array([0.5, 0.7])])
     smiles_associated = SmilesAssociatedComponentResults(component_results, smiles=["A", "B"])
 
-    # "X" was never scored -> NaN, and ordering is preserved (issue #335)
+    # "X" was never scored -> NaN, and ordering is preserved
     scores = smiles_associated.fetch_scores(["A", "X", "B"], transpose=True)[0]
 
     assert scores[0] == pytest.approx(0.5)
@@ -214,9 +214,7 @@ def test_fetch_metadata_returns_none_for_missing_smiles():
     )
     smiles_associated = SmilesAssociatedComponentResults(component_results, smiles=["A", "B"])
 
-    # "X" was never scored -> None, and ordering is preserved (issue #335)
+    # "X" was never scored -> None, and ordering is preserved
     metadata = smiles_associated.fetch_metadata(["A", "X", "B"])
 
     assert metadata == {"prop": ["a", None, "b"]}
-
-

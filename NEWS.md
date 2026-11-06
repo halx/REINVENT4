@@ -1,3 +1,30 @@
+New in REINVENT 4.9
+===================
+
+For details see CHANGELOG.md.
+
+* Modular diversity filter architecture: pluggable filter types (IdenticalMurckoScaffold,
+  IdenticalTopologicalScaffold, ScaffoldSimilarity, PenalizeSameSmiles, BitBirchDiversityFilter)
+  selectable via `[diversity_filter] type`
+* BitBirch clustering-based diversity filter (optional: `pip install reinvent[bitbirch]`)
+* Configurable penalty shapes for diversity filters: Step, Linear, Tanh, Sigmoid, Erf
+* Intrinsic reward support: RND and Information-based rewards via `[intrinsic_reward]`
+* Importance-sampling weighted inception (`is_weighted_sampling`, `is_weighted_scores`)
+* Dynamic filter components: any scoring component can act as a filter using `filter = true`
+  and a step-type transform
+* New scoring component PathFPSimilarity: Tanimoto similarity using RDKit path fingerprints
+* New scoring component FingerprintPrecedence (analogous to RingPrecedence)
+* New transform symmetric_exponential_decay: bell-shaped reward centred on a target value
+* pumas is now an optional dependency (`pip install reinvent[pumas]`)
+* Stricter config validation: run_type, device, file paths, and key parameters are now checked
+  at parse time with clear error messages rather than failing mid-run
+* Cleaner terminal error output: validation errors are formatted; tracebacks go to the log file
+* Various robustness fixes: NaN handling in scoring components, scoring run mode validity mask,
+  CSV header stability, stereochemistry in diversity filter, checkpoint backward compatibility
+* Migration note: deprecated config parameters `use_cuda` and `unique_sequences` have been
+  removed; configs still using them will fail validation on startup
+
+
 New in REINVENT 4.8
 ===================
 

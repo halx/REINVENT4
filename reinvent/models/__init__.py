@@ -17,3 +17,4 @@ from .model_factory.transformer_adapter import *
 from .model_factory.pepinvent_adapter import *
 
 from .meta_data import *
+from .meta_data2 import *

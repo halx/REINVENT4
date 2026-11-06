@@ -6,6 +6,7 @@ tags
 .idea
 /configs/config.json
 .env
+.swp
 
 # Coverage.py output
 .coverage
@@ -13,6 +14,7 @@ htmlcov/
 
 # Python memory_profiler output
 mprofile_*.dat
+azdock_run.log
 
 /reinvent.egg-info/*
 /reinvent.egg-info/dependency_links.txt

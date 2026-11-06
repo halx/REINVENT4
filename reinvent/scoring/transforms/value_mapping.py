@@ -51,3 +51,8 @@ class ValueMapping(Transform, param_cls=Parameters):
             )
 
         return np.array(transformed, dtype=float)
+
+
+# Mark value_mapping as valid for dynamic filter components (filter = true in config).
+# Values must all map to 0 or 1; enforced in config.get_components.
+ValueMapping.__filter_transform = True

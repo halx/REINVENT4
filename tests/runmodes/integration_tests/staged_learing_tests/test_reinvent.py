@@ -75,7 +75,6 @@ EXPECTED_CHECKPOINT_KEYS = [
     "network",
     "network_params",
     "staged_learning",
-    "tokenizer",
     "version",
     "vocabulary",
 ]

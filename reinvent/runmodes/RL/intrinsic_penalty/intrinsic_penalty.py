@@ -15,9 +15,9 @@ from reinvent.models.model_factory.sample_batch import SampleBatch
 import torch
 
 from reinvent.chemistry import conversions
-from reinvent.runmodes.RL.memories.bucket_counter import BucketCounter
+from reinvent.runmodes.RL.memories.utils.bucket_counter import BucketCounter
+from reinvent.runmodes.RL.memories.utils.diversity_results import DiversityResults
 from . import penalties
-
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ class IntrinsicPenalty(ABC):
     @abstractmethod
     def update_score(
         self, scores: np.ndarray, smilies: List[str], mask: np.ndarray, sampled: SampleBatch
-    ) -> List:
+    ) -> DiversityResults | None:
         """Update the score according to the concrete fitler.
 
         :param scores: an array with precomputed scores
@@ -91,7 +91,7 @@ class IntrinsicPenalty(ABC):
         :returns: updated scores where applicable, scaffolds found, and active indices
         """
         active_idxs = []
-        scaffolds = [None] * len(smilies)
+        scaffolds: list[str | None] = [None] * len(smilies)
         logger.debug(f"{__name__}: {len(smilies)=}")
 
         for i in np.nonzero(mask)[0]:

@@ -260,10 +260,11 @@ params.smarts = [
 [[scoring.component.TanimotoDistance.endpoint]]
 name = "Tanimoto similarity to asprin based on ECFP"
 weight = 1
-params.smiles = ["CC(=O)OC1=CC=CC=C1C(=O)O"] # asprin
+params.smiles = ["CC(=O)OC1=CC=CC=C1C(=O)O", "CC(C)CC1=CC=C(C=C1)C(C)C(=O)O"] # aspirin, ibuprofen
 params.radius = 3
 params.use_counts = true
 params.use_features = true
+params.aggregation = "max" # mean, min, or max (default: max) — aggregates scores across reference smiles
 
 [[scoring.component]]
 [scoring.component.MMP]
@@ -282,11 +283,24 @@ MMP = 0.5
 name = "Precedence of ring systems in database "  # user chosen name for output
 params.database_file =  "PATH_TO_DATABASE.json"
 params.make_generic = false
-params.nll_method = "max" # or max
+params.nll_method = "max" # or total
 transform.type = "reverse_sigmoid"
 transform.high = 9
 transform.low = 6
 transform.k = 0.5
+
+[[scoring.component]]
+[scoring.component.FingerprintPrecedence]
+[[scoring.component.FingerprintPrecedence.endpoint]]
+name = "Precedence of FP bits in database "  
+weight = 1.0
+params.database_files = ["PATH_TO_DATABASE.json"] # list of one or more FPs to Concatenate
+params.nll_method = "total"  # total or max
+transform.type = "reverse_sigmoid"
+transform.low  = 550.0   # note these must be callibrated for the FP type used! 
+transform.high = 700.0   
+transform.k    = 0.5
+
 
 
 # Physics/structure/ligand based components:

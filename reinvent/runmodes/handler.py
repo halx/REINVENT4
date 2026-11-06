@@ -15,7 +15,7 @@ from typing import Callable, Dict
 
 import torch
 
-from reinvent.models.meta_data import update_model_data
+from reinvent.models.meta_data2 import update_model_data_v2
 
 
 logger = logging.getLogger(__name__)
@@ -119,7 +119,7 @@ class Handler:
             data = self._callback()
 
         if data:
-            save_dict = update_model_data(data, comment="RL")
+            save_dict = update_model_data_v2(data, comment="RL")
             torch.save(save_dict, self._out_filename)
 
     def _signal_handler(self, signum, frame) -> None:

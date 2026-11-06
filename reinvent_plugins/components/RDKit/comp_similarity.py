@@ -5,7 +5,7 @@ from __future__ import annotations
 __all__ = ["TanimotoSimilarity", "TanimotoDistance"]
 
 import warnings
-from typing import List
+from typing import List, Literal
 
 import numpy as np
 from pydantic.dataclasses import dataclass
@@ -31,6 +31,12 @@ class Parameters:
     radius: List[int]
     use_counts: List[bool]
     use_features: List[bool]
+    aggregation: List[Literal["mean", "min", "max"]] = None
+
+    def __post_init__(self):
+        if self.aggregation is None:
+            self.aggregation = ["max"] * len(self.smiles)
+
 
 
 @add_tag("__component")
@@ -46,8 +52,9 @@ class TanimotoSimilarity:
     def __init__(self, params: Parameters):
         self.fp_params = []
 
-        for smilies, radius, use_counts, use_features in zip(
-            params.smiles, params.radius, params.use_counts, params.use_features
+        for smilies, radius, use_counts, use_features, aggregation in zip(
+            params.smiles, params.radius, params.use_counts, params.use_features,
+            params.aggregation,
         ):
             fingerprints = conversions.smiles_to_fingerprints(
                 smilies, radius=radius, use_counts=use_counts, use_features=use_features
@@ -56,24 +63,31 @@ class TanimotoSimilarity:
             if not fingerprints:
                 raise ValueError(f"{__name__}: unable to convert any SMILES to fingerprints")
 
-            self.fp_params.append((fingerprints, radius, use_counts, use_features))
+            self.fp_params.append((fingerprints, radius, use_counts, use_features, aggregation))
 
         self.number_of_endpoints = len(params.smiles)
 
-    def __call__(self, smilies: List[str]) -> np.array:
+    _AGGREGATION_FUNCS = {
+        "mean": lambda arr: np.mean(arr, axis=0),
+        "min": lambda arr: np.min(arr, axis=0),
+        "max": lambda arr: np.max(arr, axis=0),
+    }
+
+    def __call__(self, smilies: List[str]) -> ComponentResults:
         scores = []
 
-        for fingerprints, radius, use_counts, use_features in self.fp_params:
+        for fingerprints, radius, use_counts, use_features, aggregation in self.fp_params: # this is the loop over endpoints
             query_fingerprints = conversions.smiles_to_fingerprints(
                 smilies, radius=radius, use_counts=use_counts, use_features=use_features
             )
 
-            scores.extend(
-                [
-                    calculate_tanimoto_batch(fingerprint, query_fingerprints)
-                    for fingerprint in fingerprints
-                ]
-            )
+            endpoint_scores = np.array([
+                calculate_tanimoto_batch(fingerprint, query_fingerprints)
+                for fingerprint in fingerprints
+            ])
+
+            agg_func = self._AGGREGATION_FUNCS[aggregation]
+            scores.append(agg_func(endpoint_scores))
 
         return ComponentResults(scores)
 

@@ -30,6 +30,7 @@ class TestCreateModel(unittest.TestCase):
             max_sequence_length=256,
             input_smiles_path=self.json_config["LINKINVENT_SMILES_SET_PATH"],
             output_model_path=self.output_file,
+            stereo=False,
         )
 
         model = torch.load(self.output_file, weights_only=False)

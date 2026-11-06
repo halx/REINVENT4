@@ -1,7 +1,6 @@
 """Create a Linkinvent model from a list of SMILES strings"""
 
 from __future__ import annotations
-import time
 import uuid
 
 from reinvent.models.linkinvent.link_invent_model import LinkInventModel
@@ -10,7 +9,7 @@ from reinvent.models.linkinvent.model_vocabulary.paired_model_vocabulary import 
 )
 from reinvent.models.linkinvent.networks import EncoderDecoder
 from reinvent.chemistry.file_reader import FileReader
-from reinvent.models import meta_data
+from reinvent.models.meta_data2 import ModelMetaDataV2
 
 
 def create_model(
@@ -20,6 +19,7 @@ def create_model(
     max_sequence_length: int,
     input_smiles_path: str,
     output_model_path: str,
+    stereo: bool,
 ):
     """Create a Linkinvent model from scratch
 
@@ -55,13 +55,11 @@ def create_model(
 
     network = EncoderDecoder(encoder_config, decoder_config)
 
-    metadata = meta_data.ModelMetaData(
-        creation_date=time.time(),
+    metadata = ModelMetaDataV2(
         hash_id=None,
-        hash_id_format="",
-        model_id=uuid.uuid4(),
-        origina_data_source="unknown",
-        comments=[],
+        model_id=str(uuid.uuid4()),
+        model_architecture=LinkInventModel._model_type,
+        supports_stereochemistry=stereo,
     )
 
     model = LinkInventModel(
@@ -81,6 +79,7 @@ if __name__ == "__main__":
 
     input_smiles_path = sys.argv[1]
     output_model_path = sys.argv[2]
+    stereo = bool(sys.argv[3])
 
     create_model(
         num_layers=3,
@@ -89,4 +88,5 @@ if __name__ == "__main__":
         max_sequence_length=256,
         input_smiles_path=input_smiles_path,
         output_model_path=output_model_path,
+        stereo=stereo,
     )

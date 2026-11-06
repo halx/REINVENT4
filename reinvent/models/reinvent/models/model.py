@@ -16,7 +16,7 @@ from reinvent.models.reinvent.utils import collate_fn
 from reinvent.models.model_mode_enum import ModelModeEnum
 
 if TYPE_CHECKING:
-    from reinvent.models.meta_data import ModelMetaData
+    from reinvent.models.meta_data2 import ModelMetaDataV2 as ModelMetaData
 
 M = TypeVar("M", bound="Model")
 
@@ -115,7 +115,6 @@ class Model:
             version=self._version,
             metadata=self.meta_data,
             vocabulary=self.vocabulary.get_dictionary(),
-            tokenizer=self.tokenizer,
             max_sequence_length=self.max_sequence_length,
             network=self.network.state_dict(),
             network_params=self.network.get_params(),

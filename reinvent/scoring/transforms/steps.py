@@ -50,3 +50,9 @@ class Step(Transform, param_cls=Parameters):
         transformed = [1.0 if self.low <= x <= self.high else 0.0 for x in values]
 
         return np.array(transformed, dtype=float)
+
+
+# Mark all step transforms as valid for dynamic filter components (filter = true in config).
+# Checked in config.get_components via hasattr(Transform, "__filter_transform").
+for _cls in (RightStep, LeftStep, Step):
+    setattr(_cls, "__filter_transform", True)

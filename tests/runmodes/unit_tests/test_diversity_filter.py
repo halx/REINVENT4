@@ -1,15 +1,31 @@
 import pytest
 
 import numpy as np
+import torch
 
-from reinvent.runmodes.RL.memories.identical_murcko_scaffold import IdenticalMurckoScaffold
-from reinvent.models.model_factory.sample_batch import SmilesState
+from reinvent.runmodes.RL.memories.filters import IdenticalMurckoScaffold
+from reinvent.runmodes.RL.memories.penalties import StepPenalty
+from reinvent.models.model_factory.sample_batch import SampleBatch, SmilesState
+
+
+def _make_batch(smilies, states=None):
+    n = len(smilies)
+    if states is None:
+        states = np.array([SmilesState.VALID] * n)
+    return SampleBatch(
+        items1=None,
+        items2=list(smilies),
+        nlls=torch.zeros(n),
+        smilies=list(smilies),
+        states=states,
+    )
 
 
 @pytest.fixture
 def diversity_filter():
-
-    diversity_filter = IdenticalMurckoScaffold(
+    return IdenticalMurckoScaffold(
+        penalty_function=StepPenalty(2),
+        intrinsic_reward=None,
         bucket_size=2,
         minscore=0.4,
         minsimilarity=0.4,
@@ -17,60 +33,41 @@ def diversity_filter():
         rdkit_smiles_flags={},
     )
 
-    yield diversity_filter
-
-    pass  # no tear-down
-
 
 def test_filter_updates_scaffold_memory(diversity_filter):
-    scores = [0.64, 0.55, 0.897, 0.737]
+    scores = np.array([0.64, 0.55, 0.897, 0.737])
     smilies = ["CCc1ccccc1", "CCC=O=O", "CCCCc1ccccc1", "CCc1cnccc1"]
     states = np.array(
         [SmilesState.VALID, SmilesState.INVALID, SmilesState.VALID, SmilesState.DUPLICATE]
     )
+    mask = np.where((states == SmilesState.VALID) | (states == SmilesState.DUPLICATE), True, False)
 
-    # DF needs all valid SMILES including duplicates
-    mask = np.where(
-        (states == SmilesState.VALID) | (states == SmilesState.DUPLICATE),
-        True,
-        False,
-    )
+    diversity_filter.update_score(scores, _make_batch(smilies, states), mask)
 
-    diversity_filter.update_score(scores, smilies, mask)
-
-    # The two valid/duplicate SMILES above the minscore=0.4 threshold should be stored
     assert len(diversity_filter.scaffold_memory) == 2
 
 
 def test_filter_invalid_smiles_not_stored(diversity_filter):
-    """SMILES with INVALID state should not enter scaffold memory."""
-    scores = [0.9, 0.1]
-    smilies = ["CCC=O=O", "CCC=O=O"]  # both invalid SMILES string
+    scores = np.array([0.9, 0.1])
+    smilies = ["CCC=O=O", "CCC=O=O"]
     states = np.array([SmilesState.INVALID, SmilesState.INVALID])
+    mask = np.where((states == SmilesState.VALID) | (states == SmilesState.DUPLICATE), True, False)
 
-    mask = np.where(
-        (states == SmilesState.VALID) | (states == SmilesState.DUPLICATE),
-        True,
-        False,
-    )
-
-    diversity_filter.update_score(scores, smilies, mask)
+    diversity_filter.update_score(scores, _make_batch(smilies, states), mask)
 
     assert len(diversity_filter.scaffold_memory) == 0
 
 
 def test_filter_second_call_same_scaffold_scores_zero(diversity_filter):
-    """When the same scaffold fills its bucket a second call should zero the score."""
-    # bucket_size=2; three additions of the same scaffold should trigger zeroing on the third
-    scores_1 = [0.8, 0.9]
-    smilies_1 = ["CCc1ccccc1", "CCc1ccccc1"]  # same scaffold twice (fills bucket)
+    """SMILES already in smiles_memory should have their score zeroed on the next call."""
+    scores_1 = np.array([0.8, 0.9])
+    smilies_1 = ["CCc1ccccc1", "CCc1ccccc1"]
     mask_1 = np.array([True, True])
-    diversity_filter.update_score(scores_1, smilies_1, mask_1)
+    diversity_filter.update_score(scores_1, _make_batch(smilies_1), mask_1)
 
-    scores_2 = [0.7]
-    smilies_2 = ["CCc1ccccc1"]  # same scaffold again — bucket now full
+    scores_2 = np.array([0.7])
+    smilies_2 = ["CCc1ccccc1"]
     mask_2 = np.array([True])
-    diversity_filter.update_score(scores_2, smilies_2, mask_2)
+    diversity_filter.update_score(scores_2, _make_batch(smilies_2), mask_2)
 
-    # score should be zeroed because the SMILES was already seen
     assert scores_2[0] == 0.0

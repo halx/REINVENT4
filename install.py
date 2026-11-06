@@ -10,7 +10,16 @@
 import subprocess as sp
 import argparse
 
-OPTIONAL_DEPENDENCIES = ("all", "none", "openeye", "isim", "pumas", "chemprop1", "chemprop2")
+OPTIONAL_DEPENDENCIES = (
+    "all",
+    "none",
+    "pumas",
+    "openeye",
+    "isim",
+    "chemprop1",
+    "chemprop2",
+    "bitbirch",
+)
 OPENEYE_URL = "https://pypi.anaconda.org/OpenEye/simple"
 PYTORCH_BASE_URL = "https://download.pytorch.org/whl"
 
@@ -55,7 +64,7 @@ def main(args):
         editable = "-e"
 
     cmd = ["pip", "install", editable, f".{extra_dependencies}"]
-    cmd.extend(pytorch_url) 
+    cmd.extend(pytorch_url)
     cmd.extend(openeye_url)
     final_cmd = list(filter(None, cmd))
 

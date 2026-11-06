@@ -4,22 +4,22 @@ from typing import Optional
 
 from pydantic import Field
 
-from reinvent.validation import GlobalConfig
+from reinvent.validation import GlobalConfig, ExistingFilePath, WritableFilePath
 
 
 class SectionParameters(GlobalConfig):
     num_epochs: int = Field(ge=1)
     batch_size: int = Field(ge=1)
-    input_model_file: str
-    output_model_file: str  # FIXME: consider for removal
-    smiles_file: str
+    input_model_file: ExistingFilePath
+    output_model_file: WritableFilePath  # FIXME: consider for removal
+    smiles_file: ExistingFilePath
     sample_batch_size: int = Field(100, ge=100)
     save_every_n_epochs: int = Field(1, ge=1)
     training_zero_epoch_start: bool = False
     starting_epoch: int = Field(1, ge=1)
     shuffle_each_epoch: bool = True
     num_refs: int = Field(0, ge=0)
-    validation_smiles_file: Optional[str] = None
+    validation_smiles_file: Optional[ExistingFilePath] = None
     standardize_smiles: bool = True
     randomize_smiles: bool = True
     randomize_all_smiles: bool = False
@@ -31,7 +31,7 @@ class SectionParameters(GlobalConfig):
     max_sequence_length: int = Field(128, ge=64)
 
     # non-transformers
-    clip_gradient_norm: float = 1.0
+    clip_gradient_norm: float = Field(1.0, ge=0.0)
 
     # transformers
     pairs: Optional[dict] = Field(

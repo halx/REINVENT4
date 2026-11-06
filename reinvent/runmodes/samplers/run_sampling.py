@@ -59,7 +59,19 @@ def run_sampling(
     smiles_output_filename = parameters.output_file
 
     agent_model_filename = parameters.model_file
-    adapter, _, model_type = create_adapter(agent_model_filename, "inference", device)
+    adapter, save_dict, model_type = create_adapter(agent_model_filename, "inference", device)
+
+    metadata = save_dict.get("metadata")
+    stereo = (
+        metadata.get("supports_stereochemistry", False)
+        if isinstance(metadata, dict)
+        else getattr(metadata, "supports_stereochemistry", False)
+    )
+    if stereo and not parameters.isomeric_smiles:
+        logger.info(
+            "Overriding isomeric_smiles=True from model metadata (supports_stereochemistry)"
+        )
+        parameters.isomeric_smiles = True
 
     logger.info(f"Using generator {model_type}")
     logger.info(f"Writing sampled SMILES to CSV file {smiles_output_filename}")
@@ -81,6 +93,10 @@ def run_sampling(
     if smiles_input_filename:
         allowed_tokens = get_tokens_from_vocabulary(adapter.vocabulary)
         input_smilies = read_smiles_csv_file(smiles_input_filename, 0, allowed_tokens)
+
+        if not input_smilies:
+            raise RuntimeError(f"No valid SMILES read from {smiles_input_filename}")
+
         num_input_smilies = len(input_smilies)
 
     num_total_smilies = parameters.num_smiles * num_input_smilies
@@ -195,8 +211,10 @@ def filter_by_pattern(sampled: SampleBatch, patterns: list) -> SampleBatch:
     )
 
     custom_alerts = Scorer(config)
-    size = len(sampled.smilies)
-    score_results = custom_alerts(sampled.smilies, np.ones(size), np.ones(size), None)
+    state = np.array(sampled.states)
+    invalid_mask = state != SmilesState.INVALID
+    duplicate_mask = state != SmilesState.DUPLICATE
+    score_results = custom_alerts(sampled.smilies, invalid_mask, duplicate_mask, None)
     mask_idx = np.where(score_results.total_scores == 0, False, True)
 
     return filter_wanted_samples(sampled, mask_idx)

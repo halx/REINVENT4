@@ -1,12 +1,12 @@
 """Create a Mol2Mol model from a list of SMILES strings"""
 
 from __future__ import annotations
-import time
 import uuid
 
 import csv
 
-from reinvent.models import Mol2MolModel, meta_data
+from reinvent.models import Mol2MolModel
+from reinvent.models.meta_data2 import ModelMetaDataV2
 from reinvent.models.transformer.transformer import EncoderDecoder
 from reinvent.models.transformer.core.vocabulary import Vocabulary, SMILESTokenizer
 
@@ -50,13 +50,11 @@ def create_model(
 
     network = EncoderDecoder(**config)
 
-    metadata = meta_data.ModelMetaData(
-        creation_date=time.time(),
+    metadata = ModelMetaDataV2(
         hash_id=None,
-        hash_id_format="",
-        model_id=uuid.uuid4(),
-        origina_data_source="unknown",
-        comments=[],
+        model_id=str(uuid.uuid4()),
+        model_architecture=Mol2MolModel._model_type,
+        supports_stereochemistry=True,
     )
 
     model = Mol2MolModel(

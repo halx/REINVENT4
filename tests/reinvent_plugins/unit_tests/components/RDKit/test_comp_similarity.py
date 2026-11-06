@@ -16,28 +16,28 @@ from reinvent_plugins.components.RDKit.comp_similarity import (
             2,
             False,
             False,
-            [1.0, 0.27272727, 0.27272727, 1.0],
+            [1.0, 1.0],  # max aggregation: each query matches itself as a reference
         ),
         (
             ["c1ccccc1", "Cc1ccccc1"],
             2,
             True,
             False,
-            [1.0, 0.31034483, 0.31034483, 1.0],
+            [1.0, 1.0],
         ),
         (
             ["c1ccccc1", "Cc1ccccc1"],
             2,
             False,
             True,
-            [1.0, 0.375, 0.375, 1.0],
+            [1.0, 1.0],
         ),
         (
             ["c1ccccc1", "Cc1ccccc1"],
             2,
             True,
             True,
-            [1.0, 0.58333333, 0.58333333, 1.0],
+            [1.0, 1.0],
         ),
     ],
 )

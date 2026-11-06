@@ -34,4 +34,5 @@ class ReinventLearning(Learning):
             np.argwhere(self.sampled.states == SmilesState.VALID).flatten(),
             self.inception,
             self._state.agent,
+            weights=self.loss_modulation_weights(results),
         )

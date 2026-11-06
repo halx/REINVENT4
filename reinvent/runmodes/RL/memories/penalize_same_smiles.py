@@ -1,21 +1,10 @@
-from __future__ import annotations
-from typing import List
+"""Backward-compatibility shim for checkpoints saved before the filters/ refactoring.
 
-import numpy as np
+Old checkpoints pickle diversity filter objects under the ``memories.*`` module
+path.  Re-exporting the concrete class here lets torch.load unpickle those
+objects without error.
+"""
 
-from .diversity_filter import DiversityFilter
+from .filters.penalize_same_smiles import PenalizeSameSmiles
 
-
-class PenalizeSameSmiles(DiversityFilter):
-    """Penalize previously generated compounds."""
-
-    def update_score(self, scores: np.ndarray, smilies: List[str], mask: np.ndarray) -> None:
-        """Compute the score"""
-
-        for i in np.nonzero(mask)[0]:
-            if smilies[i] in self.smiles_memory:
-                scores[i] *= self.penalty_multiplier
-
-            self.smiles_memory.add(smilies[i])
-
-        return None
+__all__ = ["PenalizeSameSmiles"]

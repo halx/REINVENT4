@@ -1,14 +1,13 @@
 """Create a Lbinvent model from a list of SMILES strings"""
 
 from __future__ import annotations
-import time
 import uuid
 
 from reinvent.models.libinvent.models.model import DecoratorModel
 from reinvent.models.libinvent.models.vocabulary import DecoratorVocabulary
 from reinvent.models.libinvent.models.decorator import Decorator
 from reinvent.chemistry.file_reader import FileReader
-from reinvent.models import meta_data
+from reinvent.models.meta_data2 import ModelMetaDataV2
 
 
 def create_model(
@@ -18,6 +17,7 @@ def create_model(
     max_sequence_length: int,
     input_smiles_path: str,
     output_model_path: str,
+    stereo: bool,
 ):
     """Create a Lbinvent model from scratch
 
@@ -47,13 +47,11 @@ def create_model(
 
     network = Decorator(encoder_config, decoder_config)
 
-    metadata = meta_data.ModelMetaData(
-        creation_date=time.time(),
+    metadata = ModelMetaDataV2(
         hash_id=None,
-        hash_id_format="",
-        model_id=uuid.uuid4(),
-        origina_data_source="unknown",
-        comments=[],
+        model_id=str(uuid.uuid4()),
+        model_architecture=DecoratorModel._model_type,
+        supports_stereochemistry=stereo,
     )
 
     model = DecoratorModel(
@@ -73,6 +71,7 @@ if __name__ == "__main__":
 
     input_smiles_path = sys.argv[1]
     output_model_path = sys.argv[2]
+    stereo = bool(sys.argv[3])
 
     create_model(
         num_layers=3,
@@ -81,4 +80,5 @@ if __name__ == "__main__":
         max_sequence_length=256,
         input_smiles_path=input_smiles_path,
         output_model_path=output_model_path,
+        stereo=stereo,
     )

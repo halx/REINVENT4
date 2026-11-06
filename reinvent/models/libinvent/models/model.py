@@ -7,7 +7,7 @@ from typing import List, Tuple
 import torch
 import torch.nn as tnn
 
-from reinvent.models import meta_data
+from reinvent.models.meta_data2 import ModelMetaDataV2
 from reinvent.models.model_mode_enum import ModelModeEnum
 from reinvent.models.libinvent.models.decorator import Decorator
 
@@ -20,7 +20,7 @@ class DecoratorModel:
         self,
         vocabulary,
         decorator,
-        meta_data: meta_data.ModelMetaData,
+        meta_data: ModelMetaDataV2,
         max_sequence_length=256,
         mode=ModelModeEnum.TRAINING,
         device=torch.device("cpu"),

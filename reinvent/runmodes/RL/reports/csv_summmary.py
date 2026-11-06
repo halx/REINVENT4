@@ -33,6 +33,7 @@ class RLCSVReporter:
     def __init__(self, reporter):
         self.reporter = reporter
         self.__write_csv_header = True
+        self._committed_header = None
 
     def submit(self, data: RLReportData) -> None:
         """Write a summary to the CSV logger
@@ -42,6 +43,16 @@ class RLCSVReporter:
         """
 
         header, columns = write_summary(data, write_header=self.__write_csv_header)
+
+        if self._committed_header is None:
+            self._committed_header = list(header)
+        elif header != self._committed_header:
+            raise RuntimeError(
+                f"CSV header changed between steps. "
+                f"Expected {self._committed_header}, got {header}. "
+                f"Scoring components must declare metadata_keys for consistent headers."
+            )
+
         self.__write_csv_header = False
 
         lines = [" | " + " ".join(header)]
@@ -99,9 +110,9 @@ def write_summary(data, write_header):
                 header.extend(filler_headers)
                 columns.extend(filler_records)
 
-    if data.scaffolds:
+    if data.diversity_results and data.diversity_results.scaffolds:
         header.append("Scaffold")
-        columns.append(data.scaffolds)
+        columns.append(data.diversity_results.scaffolds)
 
     names = []
     scores = []
@@ -149,6 +160,24 @@ def write_summary(data, write_header):
     if len(metadata_names) > 0:
         header.extend(metadata_names)
         columns.extend(metadata_values)
+
+    relevance_names = []
+    relevance_values = []
+
+    for transformed_result in results.completed_components:
+        if transformed_result.relevance is None:
+            continue
+
+        for cname, rel in zip(transformed_result.component_names, transformed_result.relevance):
+            if rel is None:
+                continue
+
+            relevance_values.append([f"{float(c):.4f}" for c in rel])
+            relevance_names.append(f"{cname} (relevance)")
+
+    if relevance_names:
+        header.extend(relevance_names)
+        columns.extend(relevance_values)
 
     if write_header:
         csv_logger.info(header + ["step"])

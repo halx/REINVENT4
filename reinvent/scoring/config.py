@@ -9,8 +9,6 @@ import logging
 from .importer import get_registry
 from .transforms.transform import get_transform
 
-from .pumas_support import check_pumas_available, desirability_catalogue
-
 logger = logging.getLogger(__name__)
 
 
@@ -41,36 +39,58 @@ def get_components(components: list[dict[str, dict]], use_pumas: bool = False) -
     filters = []
     penalties = []
 
-    if use_pumas:
-        check_pumas_available()
-
-    component_registry = get_registry()
+    component_registry, import_failures = get_registry()
 
     for component in components:
         component_type, component_value = list(component.items())[0]
         endpoints: dict = component_value["endpoint"]
         complevel_params = component_value.get("params", {})  # Component-level params, if exist.
+        is_dynamic_filter = component_value.get("filter", False)
 
         component_type_lookup = component_type.lower().replace("-", "").replace("_", "")
 
         try:
             Component, ComponentParams = component_registry[component_type_lookup]
-        except AttributeError:
+        except KeyError:
+            if component_type_lookup in import_failures:
+                raise RuntimeError(
+                    f"Scoring component '{component_type}' could not be loaded because a "
+                    f"required dependency is not installed: {import_failures[component_type_lookup]}"
+                )
             raise RuntimeError(f"Unknown scoring component: {component_type}")
+
+        if is_dynamic_filter:
+            if use_pumas:
+                raise RuntimeError(
+                    f"Dynamic filter components are not supported with use_pumas=True: {component_type}"
+                )
+            if len(endpoints) != 1:
+                raise RuntimeError(
+                    f"Dynamic filter component '{component_type}' must have exactly one endpoint, "
+                    f"got {len(endpoints)}"
+                )
 
         parameters = []
         transforms = []
         weights = []
         names = []
+        loss_modulations = []
 
         for endpoint in endpoints:
             name: str = endpoint.get("name", component_type)
             params: dict = endpoint.get("params", {})
             transform_params: Optional[dict] = endpoint.get("transform", None)
             weight: float = endpoint.get("weight", 1.0)
+            loss_modulation: bool = endpoint.get("loss_modulation", False)
 
             if weight < 0:
                 raise RuntimeError(f"weight must be equal to or larger than zero but is {weight}")
+
+            if is_dynamic_filter and transform_params is None:
+                raise RuntimeError(
+                    f"Dynamic filter component '{component_type}' endpoint '{name}' "
+                    f"must specify a transform"
+                )
 
             # Merge component-level params with this endpoint params.
             # Endpoint params take precedence.
@@ -82,19 +102,44 @@ def get_components(components: list[dict[str, dict]], use_pumas: bool = False) -
 
             if transform_params:
                 if use_pumas:
-                    transform_type = transform_params['type'].lower()
+                    transform_type = transform_params["type"].lower()
                 else:
-                    transform_type = transform_params["type"].lower().replace("-", "").replace("_", "")
+                    transform_type = (
+                        transform_params["type"].lower().replace("-", "").replace("_", "")
+                    )
 
                 try:
                     if use_pumas:
+                        from pumas.desirability import desirability_catalogue
+
                         Transform = desirability_catalogue.get(transform_type)
                     else:
                         Transform, TransformParams = get_transform(transform_type)
                 except AttributeError:
                     raise RuntimeError(f"Unknown transform type: {transform_params['type']}")
                 except Exception as e:
-                    raise Exception(f'An unhandled exception occured: {e}')
+                    raise Exception(f"An unhandled exception occured: {e}")
+
+                if is_dynamic_filter and not hasattr(Transform, "__filter_transform"):
+                    raise RuntimeError(
+                        f"Dynamic filter component '{component_type}' endpoint '{name}' "
+                        f"requires a step-type transform (left_step, right_step, step) "
+                        f"or a value_mapping transform with all values 0 or 1, "
+                        f"got '{transform_params['type']}'"
+                    )
+
+                if is_dynamic_filter and transform_type == "valuemapping":
+                    non_binary = {
+                        k: v
+                        for k, v in transform_params.get("mapping", {}).items()
+                        if float(v) not in (0.0, 1.0)
+                    }
+                    if non_binary:
+                        raise RuntimeError(
+                            f"Dynamic filter component '{component_type}' endpoint '{name}' "
+                            f"uses a value_mapping transform but these categories do not map "
+                            f"to 0 or 1: {non_binary}"
+                        )
 
                 if use_pumas:
                     # Gather the expected parameters for the transform and their types
@@ -104,11 +149,19 @@ def get_components(components: list[dict[str, dict]], use_pumas: bool = False) -
                     # Convert the parameters to the expected types
                     # TODO: reimplement type checking and conversion in pumas with type coercion
                     for key, value in transform_params.items():
-                        if key == 'type':
+                        if key == "type":
                             continue
-                        elif value is not None and key in param_defs and param_defs[key]['type'] == 'float':
+                        elif (
+                            value is not None
+                            and key in param_defs
+                            and param_defs[key]["type"] == "float"
+                        ):
                             params[key] = float(value)
-                        elif value is not None and key in param_defs and param_defs[key]['type'] == 'int':
+                        elif (
+                            value is not None
+                            and key in param_defs
+                            and param_defs[key]["type"] == "int"
+                        ):
                             params[key] = int(value)
                         else:
                             params[key] = value
@@ -119,6 +172,7 @@ def get_components(components: list[dict[str, dict]], use_pumas: bool = False) -
             transforms.append(transform)
             weights.append(weight)
             names.append(name)
+            loss_modulations.append(loss_modulation)
 
         component_params = None
         collected_params = collect_params(parameters)
@@ -128,18 +182,18 @@ def get_components(components: list[dict[str, dict]], use_pumas: bool = False) -
 
         component = Component(component_params)
 
-        cache=defaultdict(dict)
+        cache = defaultdict(dict)
 
         if hasattr(component, "no_cache") and component.no_cache:
             cache = None
-        
+
         data = ComponentData(
             component_type=component_type_lookup,
-            params=(names, component, transforms, weights),
+            params=(names, component, transforms, weights, loss_modulations),
             cache=cache,
         )
 
-        if Component.__component == "filter":
+        if Component.__component == "filter" or is_dynamic_filter:
             logger.info(f"Creating filter component {component_type}")
             filters.append(data)
         elif Component.__component == "penalty":

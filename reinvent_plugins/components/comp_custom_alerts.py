@@ -24,6 +24,7 @@ class Parameters:
 @add_tag("__component", "filter")
 class CustomAlerts:
     def __init__(self, params: Parameters):
+        self.metadata_keys = ("matchting_patterns",)
         # FIXME: read from file?
         # to avoid multiple computations of the temple, do it at init only
         self.smarts = []
@@ -53,5 +54,5 @@ class CustomAlerts:
         scores = [1 - any(m) for m in all_matches]
 
         return ComponentResults(
-            [np.array(scores, dtype=float)], metadata={"matchting_patterns": all_matches}
+            [np.array(scores, dtype=float)], metadata={self.metadata_keys[0]: all_matches}
         )

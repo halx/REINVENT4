@@ -23,10 +23,10 @@ from reinvent.utils import config_parse
 from . import aggregators
 from .config import get_components
 from .compute_scores import compute_transform
-from .pumas_support import aggregation_catalogue, check_pumas_available
 from .results import ScoreResults
 from .validation import ScorerConfig
 
+from ._pumas_compat import require_pumas
 
 MAX_CPU_COUNT = 8
 logger = logging.getLogger(__name__)
@@ -81,7 +81,7 @@ def compute_component_score(component, fragments, smilies, valid_mask, use_pumas
         component.cache,
         valid_mask,
         index_smiles=smilies if fragments_component else None,
-        use_pumas=use_pumas
+        use_pumas=use_pumas,
     )
 
     return transform_result
@@ -102,13 +102,14 @@ class Scorer:
 
         self.use_pumas = config.use_pumas
         if self.use_pumas:
-            check_pumas_available()
+            require_pumas()
+            from pumas.aggregation import aggregation_catalogue
 
             # Need to handle mapping for back compatibility
-            if config.type == 'custom_product':
-                config.type = 'geometric_mean'
-            if config.type == 'custom_sum':
-                config.type = 'arithmetic_mean'
+            if config.type == "custom_product":
+                config.type = "geometric_mean"
+            if config.type == "custom_sum":
+                config.type = "arithmetic_mean"
 
             self.aggregate = aggregation_catalogue.get(config.type)
         else:
@@ -163,7 +164,15 @@ class Scorer:
 
             completed_components = pool.starmap(
                 compute_component_score,
-                list(zip(self.components.scorers, fragment_args, smilies_args, valid_mask_args, use_pumas)),
+                list(
+                    zip(
+                        self.components.scorers,
+                        fragment_args,
+                        smilies_args,
+                        valid_mask_args,
+                        use_pumas,
+                    )
+                ),
             )
         else:
             for component in self.components.scorers:
@@ -193,14 +202,14 @@ class Scorer:
                     smiles_scores = [component[smiles] for component in tscores_list]
                     aggregate = self.aggregate()
 
-                    if self.config.type == 'geometric_mean':
+                    if self.config.type == "geometric_mean":
                         # Using the maxima and the float32 precision we get identical results to reinvent from the aggregation.
                         smiles_scores = np.maximum(np.array(smiles_scores, dtype=np.float32), 1e-8)
                         weights_list = np.maximum(np.array(weights_list, dtype=np.float32), 1e-8)
                     else:
                         # For other aggregation types, still use float32 as reinvent does.
                         smiles_scores = np.array(smiles_scores, dtype=np.float32)
-                        weights_list = np.array(weights_list, dtype=np.float32) 
+                        weights_list = np.array(weights_list, dtype=np.float32)
 
                     result = aggregate(values=smiles_scores, weights=weights_list)
                     total_scores = np.append(total_scores, result)
@@ -227,7 +236,7 @@ class Scorer:
                 component.cache,
                 valid_mask,
                 None,
-                self.use_pumas
+                self.use_pumas,
             )
 
             for scores in transform_result.transformed_scores:
@@ -252,7 +261,7 @@ class Scorer:
                 component.cache,
                 valid_mask,
                 index_smiles=smilies if component.component_type == "reactionfilter" else None,
-                use_pumas = self.use_pumas
+                use_pumas=self.use_pumas,
             )
 
             for scores in transform_result.transformed_scores:

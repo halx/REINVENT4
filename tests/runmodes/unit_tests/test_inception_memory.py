@@ -35,7 +35,7 @@ MEMORY_SIZE = len(SMILIES)
 @pytest.fixture
 def inception_memory():
     scores = torch.linspace(0.2, 0.9, 20)
-    lls = torch.arange(1, 21)
+    lls = torch.arange(1, 21, dtype=torch.float)
 
     inception = Inception(
         memory_size=MEMORY_SIZE,
@@ -48,25 +48,32 @@ def inception_memory():
     inception.add(SMILIES, scores, lls)
 
     yield inception
-    pass  # no tear-down
 
 
 def test_inception_add(inception_memory):
     assert len(inception_memory.storage) == len(SMILIES)
     assert inception_memory._storage_smilies == set(SMILIES)
 
-    smilies, _, _ = zip(*inception_memory.storage)
+    smilies, _, _, _, _ = zip(*inception_memory.storage)
 
     assert list(smilies) == list(reversed(SMILIES))
 
 
 def test_inception_sample(inception_memory):
-    sample = inception_memory.sample()
+    sampled, is_weight_max, is_weight_entropy, mean_drift = inception_memory.sample()
 
-    assert len(sample) == 3  # orig SMILES, scores, NLLs
-    assert len(sample[0]) == SAMPLE_SIZE
-    assert len(sample[1]) == SAMPLE_SIZE
-    assert len(sample[2]) == SAMPLE_SIZE
+    assert sampled is not None
+    assert len(sampled) == 5  # smilies, scores, prior_lls, agent_lls, relevance
+    assert len(sampled[0]) == SAMPLE_SIZE
+    assert len(sampled[1]) == SAMPLE_SIZE
+    assert len(sampled[2]) == SAMPLE_SIZE
+    assert len(sampled[3]) == SAMPLE_SIZE
+    assert len(sampled[4]) == SAMPLE_SIZE
+
+    # no agent provided — IS metrics should be None
+    assert is_weight_max is None
+    assert is_weight_entropy is None
+    assert mean_drift is None
 
 
 def test_inception_add_more_and_sample(inception_memory):
@@ -75,16 +82,16 @@ def test_inception_add_more_and_sample(inception_memory):
         "CC(C)C(N)C(=O)N1CCN(c2ccc(CN(C)C)cn2)CC1",
         "O=CI(CN1CCCC(C(=O)Nc2ccccc2)C1)NCC(=O)Nc1ccc(F)c(F)c1",
     )
-    cmp = set(SMILIES) | set(smilies)
     scores = torch.tensor([0.17, 0.08, 0.12])
     lls = torch.tensor([-12.19, -5.13, -7.87])
 
-    _smilies, _scores, _lls = inception_memory(smilies, scores, lls)
+    result = inception_memory(smilies, scores, lls)
+    _smilies, _scores, _lls, _agent_lls, _relevance = result
     assert len(_smilies) == SAMPLE_SIZE
     assert len(_scores) == SAMPLE_SIZE
     assert len(_lls) == SAMPLE_SIZE
 
-    _smilies, _scores, _lls = zip(*inception_memory.storage)
+    _smilies, _scores, _lls, _agent_lls, _relevance = zip(*inception_memory.storage)
     assert len(_smilies) == MEMORY_SIZE
     assert len(_scores) == MEMORY_SIZE
     assert len(_lls) == MEMORY_SIZE

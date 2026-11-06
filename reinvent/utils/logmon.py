@@ -7,6 +7,7 @@ from __future__ import annotations
 
 __all__ = [
     "CsvFormatter",
+    "SuppressTracebackFormatter",
     "VERBOSE",
     "setup_logger",
     "enable_rdkit_log",
@@ -67,6 +68,27 @@ class CsvFormatter(logging.Formatter):
         return data.strip()
 
 
+class SuppressTracebackFormatter(logging.Formatter):
+    """Formatter that omits exception tracebacks.
+
+    Used on the stderr handler when a log file is also configured so that
+    tracebacks go only to the file while the terminal receives the plain
+    message.  The ``LogRecord`` is restored after formatting so the file
+    handler still sees the full exception information.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        saved_exc_info = record.exc_info
+        saved_exc_text = record.exc_text
+        record.exc_info = None
+        record.exc_text = None
+        try:
+            return super().format(record)
+        finally:
+            record.exc_info = saved_exc_info
+            record.exc_text = saved_exc_text
+
+
 START_TIME = datetime.now()
 
 
@@ -101,6 +123,12 @@ def setup_logger(
 ):
     """Setup a logging facility.
 
+    When *filename* is given the logger writes full-detail output to that file
+    **and** attaches a second handler on stderr that shows WARNING and above
+    with a plain ``LEVEL: message`` format.  This ensures that fatal errors
+    are always visible in the terminal even when all output is redirected to a
+    log file.
+
     :param name: name of the logger, root if empty or None
     :param config: dictionary configuration
     :param filename: optional filename for logging output
@@ -129,13 +157,6 @@ def setup_logger(
         fileConfig(cfg_filename)
         return
 
-    if filename:
-        handler = logging.FileHandler(filename, mode="w+")
-    else:
-        handler = logging.StreamHandler(stream)
-
-    handler.setLevel(level)
-
     if debug:
         log_format = "%(daysSinceStart)s%(asctime)s %(module)s.%(funcName)s +%(lineno)s: %(levelname)-4s %(message)s"
     else:
@@ -147,9 +168,25 @@ def setup_logger(
             datefmt="%H:%M:%S",
         )
 
-    handler.setFormatter(formatter)
+    if filename:
+        file_handler = logging.FileHandler(filename, mode="w+")
+        file_handler.setLevel(level)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
 
-    logger.addHandler(handler)
+        # Always keep WARNING+ visible on stderr so fatal errors reach the
+        # terminal even when the user redirects all output to the log file.
+        # Use SuppressTracebackFormatter so tracebacks go to the file only.
+        stderr_handler = logging.StreamHandler(sys.stderr)
+        stderr_handler.setLevel(logging.WARNING)
+        stderr_handler.setFormatter(SuppressTracebackFormatter("%(levelname)s: %(message)s"))
+        logger.addHandler(stderr_handler)
+    else:
+        handler = logging.StreamHandler(stream)
+        handler.setLevel(level)
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+
     logger.propagate = propagate
 
     return logger

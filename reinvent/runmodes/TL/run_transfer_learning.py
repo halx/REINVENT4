@@ -46,9 +46,21 @@ def run_transfer_learning(
     scheduler_config = config.scheduler
 
     model_filename = parameters.input_model_file
-    adapter, _, model_type = create_adapter(model_filename, "training", device)
+    adapter, save_dict, model_type = create_adapter(model_filename, "training", device)
 
     logger.info(f"Using generator {model_type}")
+
+    metadata = save_dict.get("metadata")
+    stereo = (
+        metadata.get("supports_stereochemistry", False)
+        if isinstance(metadata, dict)
+        else getattr(metadata, "supports_stereochemistry", False)
+    )
+    if stereo and not parameters.isomeric_smiles:
+        logger.info(
+            "Overriding isomeric_smiles=True from model metadata (supports_stereochemistry)"
+        )
+        parameters.isomeric_smiles = True
 
     smiles_filename = os.path.abspath(parameters.smiles_file)
     do_standardize = parameters.standardize_smiles
@@ -82,9 +94,7 @@ def run_transfer_learning(
     logger.info(f"Read {len(smilies)} input SMILES from {smiles_filename}")
 
     if not smilies:
-        msg = f"Unable to read valid SMILES from {smiles_filename}"
-        logger.fatal(msg)
-        raise RuntimeError(msg)
+        raise RuntimeError(f"Unable to read valid SMILES from {smiles_filename}")
 
     validation_smiles_filename = parameters.validation_smiles_file
     validation_smilies = None
@@ -135,7 +145,10 @@ def run_transfer_learning(
             optimizer, step_size=lr_config.step, gamma=lr_config.gamma
         )
 
-    runner_class = getattr(TL, f"{model_type}")
+    runner_class = getattr(TL, f"{model_type}", None)
+
+    if runner_class is None:
+        raise RuntimeError(f"Transfer learning is not supported for model type '{model_type}'")
 
     optimize = runner_class(
         adapter,

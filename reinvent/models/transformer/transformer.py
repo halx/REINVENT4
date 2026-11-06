@@ -5,7 +5,7 @@ import torch
 from torch import nn as tnn
 from torch.autograd import Variable
 
-from reinvent.models import meta_data
+from reinvent.models.meta_data2 import ModelMetaDataV2
 from reinvent.models.transformer.core.enums.sampling_mode_enum import SamplingModesEnum
 from reinvent.models.transformer.core.network.encode_decode.model import EncoderDecoder
 from reinvent.models.transformer.core.network.module.subsequent_mask import subsequent_mask
@@ -26,7 +26,7 @@ class TransformerModel(ABC):
         self,
         vocabulary: Vocabulary,
         network: EncoderDecoder,
-        meta_data: meta_data.ModelMetaData,
+        meta_data: ModelMetaDataV2,
         max_sequence_length: int = 128,
         mode: str = ModelModeEnum().TRAINING,
         device=torch.device("cpu"),

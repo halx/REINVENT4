@@ -8,6 +8,23 @@ import torch
 from reinvent.runmodes.create_model.create_reinvent import create_model
 
 
+def _create(output_file, smiles_path, metadata):
+    create_model(
+        num_layers=3,
+        layer_size=512,
+        dropout=0.0,
+        max_sequence_length=256,
+        cell_type="lstm",
+        embedding_layer_size=256,
+        layer_normalization=False,
+        standardize=True,
+        input_smiles_path=smiles_path,
+        output_model_path=output_file,
+        metadata=metadata,
+    )
+    return torch.load(output_file, weights_only=False)
+
+
 @pytest.mark.integration
 @pytest.mark.usefixtures("json_config")
 class TestCreateModel(unittest.TestCase):
@@ -23,21 +40,11 @@ class TestCreateModel(unittest.TestCase):
             shutil.rmtree(self.workdir)
 
     def test_create_model(self):
-        create_model(
-            num_layers=3,
-            layer_size=512,
-            dropout=0.0,
-            max_sequence_length=256,
-            cell_type="lstm",
-            embedding_layer_size=256,
-            layer_normalization=False,
-            standardize=True,
-            input_smiles_path=self.json_config["SMILES_SET_PATH"],
-            output_model_path=self.output_file,
-            metadata={"data_source": "pytest", "comment": "pytest"},
+        model = _create(
+            self.output_file,
+            self.json_config["SMILES_SET_PATH"],
+            {"data_source": "pytest", "comment": "pytest"},
         )
-
-        model = torch.load(self.output_file, weights_only=False)
         keys = list(model.keys())
 
         self.assertEqual(
@@ -47,7 +54,6 @@ class TestCreateModel(unittest.TestCase):
                 "version",
                 "metadata",
                 "vocabulary",
-                "tokenizer",
                 "max_sequence_length",
                 "network",
                 "network_params",
@@ -63,3 +69,47 @@ class TestCreateModel(unittest.TestCase):
         self.assertEqual(network_params["num_layers"], 3)
         self.assertEqual(network_params["cell_type"], "lstm")
         self.assertEqual(network_params["embedding_layer_size"], 256)
+
+    def test_metadata_supports_stereochemistry_default_false(self):
+        model = _create(
+            self.output_file,
+            self.json_config["SMILES_SET_PATH"],
+            {"data_source": "pytest"},
+        )
+        self.assertFalse(model["metadata"].supports_stereochemistry)
+
+    def test_metadata_supports_stereochemistry_true(self):
+        model = _create(
+            self.output_file,
+            self.json_config["SMILES_SET_PATH"],
+            {"data_source": "pytest", "supports_stereochemistry": True},
+        )
+        self.assertTrue(model["metadata"].supports_stereochemistry)
+
+    def test_metadata_comment_stored_in_update_log(self):
+        model = _create(
+            self.output_file,
+            self.json_config["SMILES_SET_PATH"],
+            {"data_source": "pytest", "comment": "initial note"},
+        )
+        log = model["metadata"].update_log
+        self.assertEqual(len(log), 1)
+        self.assertEqual(log[0]["comment"], "initial note")
+        self.assertIsNone(log[0]["timestamp"])
+        self.assertIsNone(log[0]["prior_hash"])
+
+    def test_metadata_no_comment_empty_update_log(self):
+        model = _create(
+            self.output_file,
+            self.json_config["SMILES_SET_PATH"],
+            {"data_source": "pytest"},
+        )
+        self.assertEqual(model["metadata"].update_log, [])
+
+    def test_metadata_model_architecture_set(self):
+        model = _create(
+            self.output_file,
+            self.json_config["SMILES_SET_PATH"],
+            {"data_source": "pytest"},
+        )
+        self.assertEqual(model["metadata"].model_architecture, "Reinvent")

@@ -3,7 +3,7 @@ from typing import List, Tuple
 import torch
 from torch import nn as tnn
 
-from reinvent.models import meta_data
+from reinvent.models.meta_data2 import ModelMetaDataV2
 from reinvent.models.linkinvent.model_vocabulary.paired_model_vocabulary import (
     PairedModelVocabulary,
 )
@@ -20,7 +20,7 @@ class LinkInventModel:
         self,
         vocabulary: PairedModelVocabulary,
         network: EncoderDecoder,
-        meta_data: meta_data.ModelMetaData,
+        meta_data: ModelMetaDataV2,
         max_sequence_length: int = 256,
         mode: str = ModelModeEnum().TRAINING,
         device=torch.device("cpu"),

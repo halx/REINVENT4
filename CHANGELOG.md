@@ -3,6 +3,376 @@
 This follows the guideline on [keep a changelog](https://keepachangelog.com/)
 
 
+## [4.9.34] 2026-11-06
+
+Original implementation by Marten ([@focccus](https://github.com/focccus)),
+[PR #353](https://github.com/MolecularAI/REINVENT4/pull/353).
+
+### Added
+
+- **Modular diversity filter architecture**: the monolithic `DiversityFilter` base class has been
+  replaced by a pluggable `memories/filters/` package.  Available filter types (set via
+  `[diversity_filter] type`): `IdenticalMurckoScaffold`, `IdenticalTopologicalScaffold`,
+  `ScaffoldSimilarity`, `PenalizeSameSmiles`, and `BitBirchDiversityFilter` (requires the optional
+  `bblean` dependency: `pip install reinvent[bitbirch]`).
+- **Configurable penalty functions**: `Step`, `Linear`, `Tanh`, `Sigmoid`, and `Erf` penalty shapes
+  are now selectable via `[diversity_filter] penalty_function`.
+- **Intrinsic reward system**: `RND` (Random Network Distillation) and `Information`-based intrinsic
+  rewards can be attached to the diversity filter via `[intrinsic_reward]`.
+- **IS-weighted inception**: importance-sampling weighted sampling (`is_weighted_sampling`) and score
+  reweighting (`is_weighted_scores`) in `[inception]`; diversity-penalty coupling uses the new
+  read-only `peek_penalty` so the inception buffer no longer pollutes the diversity filter state.
+- **Extended TensorBoard reporting**: `Diversity/` and `Inception/` scalar namespaces expose
+  per-step filter and inception metrics; the remote reporter gains structured diversity and inception
+  sub-records.
+- **Config documentation**: `configs/diversity_filter.md` and `configs/inception.md` document all
+  new options.
+
+### Fixed
+
+- Inception diversity-penalty coupling: `Inception.update` was calling
+  `DiversityFilter.calculate_penalty` on the full stored buffer every step, which is not read-only —
+  it inserts fingerprints / scaffolds into the shared filter bypassing the `minscore` gate and
+  exact-SMILES dedup.  Buffer molecules were re-inserted every step, saturating clusters early,
+  penalising freshly sampled molecules in those clusters, and growing the BitBirch tree by up to
+  `memory_size` fingerprints per step.  Fixed by adding a read-only `peek_penalty` method to
+  `DiversityFilter` (default: all-ones) overridden in `ScaffoldDiversityFilter`,
+  `BitBirchDiversityFilter`, and `PenalizeSameSmiles`; `Inception.update` now calls `peek_penalty`.
+- `InformationPenalty.update_score` returned `None` when no molecule reached `minscore` and a
+  `scaffolds` list shorter than the batch when some did, causing `RuntimeError` in the CSV logger
+  header-drift guard and silent row truncation in `write_summary`.  Fixed by always returning a
+  full-batch-length `DiversityResults`.
+- `BucketCounter` backward-compatibility shim: the `f72305d4` refactoring removed
+  `memories/bucket_counter.py` without a shim, so checkpoints pickled before that refactoring
+  raised `ModuleNotFoundError` on load.  Added a proper re-export shim at the old path.
+- `BitBirchDiversityFilter`: passing `recluster_tolerance` to the `BitBirch()` constructor
+  alongside a custom `merge_criterion` raised an immediate `ValueError` (mutually exclusive
+  arguments).  Fixed by forwarding `recluster_tolerance` only at the point `set_merge` is called.
+- `BitBirchDiversityFilter`: after the first recluster, `set_merge("diameter")` silently replaced
+  the custom `BitBirchTrackingDiameterMerge` with `_FastDiameterMerge`, disabling bucket tracking
+  for all subsequent steps (all penalties became 1.0).  Fixed by restoring `self.merge_criterion`
+  after reclustering.
+- `[diversity_filter] debug` was registered in `SectionDiversityFilter` as `bit_birch_debug`,
+  diverging from the documented name and from `[inception].debug`.  Any config following the docs
+  failed `extra="forbid"` validation.  Renamed to `debug` (no deprecation alias needed; the field
+  was introduced in this PR).
+- Checkpoint backward-compatibility regression introduced by the `f72305d4` diversity-filter
+  refactoring: the four old stub files (`identical_murcko_scaffold.py`, etc.) became effectively
+  abstract after new abstract methods were added to `DiversityFilter`, causing `torch.load` to raise
+  `TypeError` when loading checkpoints saved before the refactoring.  Fixed by converting the stubs
+  to re-export shims for the corresponding concrete classes in `memories/filters/`.
+
+
+## [4.9.33] 2026-11-04
+
+### Changed
+
+- Loss modulation: configuration validation now rejects `loss_modulation = true` endpoints when
+  `learning_strategy.type` is not `dap` (the scalar-loss strategies `mascof`/`mauli`/`sdap` and the
+  reinforce variants cannot be modulated per molecule); the error is raised at config read instead
+  of mid-training.
+
+
+## [4.9.32] 2026-11-02
+
+### Added
+
+- `bblean` (BitBirch diversity filter) added as an optional dependency installable via `pip install reinvent[bitbirch]` or `pip install reinvent[all]`.  Added `bitbirch` to the `OPTIONAL_DEPENDENCIES` tuple in `install.py`.
+
+
+## [4.9.31] 2026-11-02
+
+### Fixed
+
+- Added missing `psutil` dependency
+
+
+## [4.9.30] 2026-10-26
+
+### Fixed
+
+- `MolVolume`: removed artificial `randomSeed=0xF00D` from `EmbedMolecule`; the seed
+  had no scientific justification and was only present to satisfy a now-removed exact-value
+  assertion in the unit test.
+
+
+## [4.9.29] 2026-10-22
+
+### Fixed
+
+- `test_comp_mol_volume`: replaced brittle exact-value assertions with
+  property-based checks (finite, positive, < 500 Å³, larger molecule scores
+  higher).  RDKit's ETKDG embedder can produce slightly different conformers
+  across versions even with a fixed seed, making exact volume comparisons
+  inherently fragile.
+
+
+## [4.9.28] 2026-10-20
+
+### Added
+
+- New scoring component `PathFPSimilarity`: Tanimoto similarity using RDKit
+  path-based (topological) fingerprints (`RDKFingerprint`), as an alternative to
+  the Morgan-fingerprint-based `TanimotoSimilarity`.  Supports `min_path`,
+  `max_path`, `n_bits`, and `aggregation` (`"max"` / `"mean"` / `"min"`, default
+  `"max"`) parameters.  Tagged with `@molcache` for RDKit `Mol` caching.
+- New transform `symmetric_exponential_decay`: computes `exp(-k * |x - target|)`,
+  a symmetric bell centred on `target` that peaks at 1.0 when `x == target`.
+  Distinct from the existing one-sided `exponential_decay` transform.
+- `configs/SCORING.md` updated with entries for `PathFPSimilarity`,
+  `SymmetricExponentialDecay`, and the previously undocumented `aggregation`
+  parameter of `TanimotoSimilarity`.
+
+
+## [4.9.27] 2026-10-20
+
+### Fixed
+
+- `SmilesAssociatedComponentResults.fetch_scores` now returns `(NaN,) * n_endpoints` for SMILES absent from the results dict instead of raising `KeyError`; `fetch_metadata` returns `None` instead of raising `AttributeError`.  Prevents reporters from crashing on incomplete component results while preserving score ordering.  Ported from public PR [#357](https://github.com/MolecularAI/REINVENT4/pull/357) by BangBang-afk.
+
+
+## [4.9.26] 2026-10-20
+
+### Fixed
+
+- `MatchingSubstructure` now raises `ValueError` with the offending pattern string if a SMARTS cannot be parsed by RDKit, rather than storing a `None` pattern and crashing with an opaque Boost `ArgumentError` at scoring time.  Silently dropping the pattern is unsafe because `patterns_per_endpoint` is index-aligned with `use_chirality` and endpoint names.  Ported from public PR [#367](https://github.com/MolecularAI/REINVENT4/pull/367) by Ishaan Samantray.
+
+
+## [4.9.25] 2026-10-20
+
+### Fixed
+
+- All `@molcache`-decorated scoring components that passed `None` molecules to RDKit now return
+  `NaN` instead of raising `AttributeError` (or other heterogeneous exceptions depending on
+  RDKit version): `LinKInvent` fragment components, `PhysChem`, `RDKitDescriptors`, `MolVolume`,
+  `TPSA`, `PMI`, `GroupCount`, `MatchingSubstructure`, `SAScore`, and `RingPrecedence`.
+- `MolVolume`, `TPSA`, and `PhysChem`: broadened `except ValueError` to `except Exception` so
+  all RDKit exception types are caught consistently across versions.
+- `PMI`: replaced the `embed_result == -1` sentinel check with `try/except Exception` around
+  the full `AddHs`/`EmbedMolecule`/`CalcNPR1`/`CalcNPR2` sequence.
+- `LinKInvent`: added a systemic-failure `ERROR` log when every molecule in a batch fails to
+  score (indicates a component or configuration bug rather than per-SMILES noise).
+- One `_none_molecule_scores_nan` unit test added per affected component.
+
+
+## [4.9.24] 2026-10-13
+
+### Fixed
+
+- Scoring components whose optional dependencies are not installed are now silently skipped at startup rather than logging a noisy `ERROR`.  If the user's config requests such a component, a clear `RuntimeError` is raised explaining which dependency is missing and how to install it.
+- `get_components` now catches `KeyError` instead of `AttributeError` when looking up an unknown component type, fixing a latent bug where an unregistered component name produced an unhelpful `AttributeError` instead of the intended `"Unknown scoring component"` message.
+
+
+## [4.9.23] 2026-10-13
+
+### Changed
+
+- `pumas` is now an optional dependency; install with `pip install reinvent[pumas]` or `pip install reinvent[all]`.  When `pumas` is absent, importing the scoring module no longer raises `ImportError`; setting `use_pumas = true` raises a clear `ImportError` with an install hint at scorer construction time.
+
+
+## [4.9.22] 2026-10-09
+
+### Added
+
+- New test file `tests/utils/test_errors.py` (11 tests): covers `format_validation_error` formatting, truncation of long input values, and `fatal()` exit code, stderr output, and logger integration
+- New test file `tests/utils/test_logmon.py` (10 tests): covers `setup_logger` single- vs dual-handler behaviour, handler levels, `SuppressTracebackFormatter` traceback suppression and record non-mutation, and the full split-stream integration scenario
+- New test file `tests/test_reinvent_config.py` (22 tests): covers `ReinventConfig.run_type` Literal (all valid and multiple invalid values), `device` regex validator (all valid patterns including `xpu` for Intel ARC, multiple invalid strings), `version` field bounds, `extra="forbid"` enforcement, and `ExistingFilePath` / `WritableFilePath` annotated types
+- New test file `tests/runmodes/unit_tests/test_rl_validation.py` (30 tests): covers `SectionStage.termination` Literal, `min_steps < max_steps` cross-field validator, `SectionInception` cross-field validator and bounds, `StepLRConfiguration` and `LambdaLRConfiguration` `__post_init__` bounds (including the `warmup=0` ZeroDivisionError case and `gamma=0` silent-kill case)
+- New test file `tests/runmodes/unit_tests/test_smiles_gate.py` (10 tests): covers the `run_scoring` RDKit validity mask for valid, invalid, mixed, and empty SMILES; verifies `filter_by_pattern` no longer uses `np.ones` and correctly derives masks from `sampled.states` (including mock-based verification that `INVALID`/`DUPLICATE` states map to `False` masks)
+
+
+## [4.9.21] 2026-10-09
+
+### Fixed
+
+- **Scoring run mode** (`run_scoring`): the validity mask was built as `True` for any non-empty string, allowing chemically invalid SMILES to reach scoring plugins. The mask is now derived from `Chem.MolFromSmiles` — any SMILES that RDKit cannot parse gets `mask=False` and is short-circuited to score `0.0` without touching any plugin. A warning is logged listing the count of skipped SMILES.
+- **Sampling SMARTS filter** (`filter_by_pattern` in `run_sampling`): the scorer was called with `np.ones` masks (unconditionally `True` for all SMILES), bypassing the validity gate when `unique_molecules=False`. The masks are now derived from `sampled.states` (the same `SmilesState.INVALID` / `DUPLICATE` flags set by `validate_smiles()`), consistent with how the RL path handles validity.
+- File extension check in `run_scoring.read_data` is now case-insensitive (`.CSV`/`.SMI` accepted alongside `.csv`/`.smi`).
+
+
+## [4.9.20] 2026-10-09
+
+### Fixed
+
+- Eliminated duplicate `CRITICAL` log lines that appeared when a terminating error was raised: the pattern `logger.critical(msg); raise RuntimeError(msg)` has been replaced by a bare `raise` throughout `create_adapter`, `run_staged_learning`, `run_sampling`, `run_transfer_learning`, and `Reinvent.py`. The top-level `fatal()` handler is now the single point responsible for logging terminating errors
+- `format_validation_error` truncates large `input` values (e.g. the full stage dict from a model-level cross-field validator) to 80 characters so the terminal output stays readable
+
+
+## [4.9.19] 2026-10-09
+
+### Fixed
+
+- `torch.load` in `create_adapter` is now wrapped in a `try/except`; corrupt or non-Reinvent model files now produce a clear `"Failed to load model file: …"` message instead of a raw `UnpicklingError` or `EOFError`
+- `inception.smiles_file` being set for a non-Reinvent model type was silently ignored; it now logs a `WARNING` explaining that seeding is only supported for the Reinvent model
+- `use_checkpoint=True` with no `staged_learning` key in the agent checkpoint now logs a `WARNING` and starts with a fresh diversity filter instead of silently falling through to the `elif` branch
+- File extension check in `aa_enumerator.read_smiles_csv_file` is now case-insensitive (`.CSV` and `.SMI` are accepted alongside `.csv` and `.smi`); error message for unknown extensions now states the expected formats
+
+
+## [4.9.18] 2026-10-09
+
+### Changed
+
+- `SectionStage` gains a cross-field validator: `min_steps` must be less than `max_steps`; previously a stage with `min_steps=50, max_steps=10` ran all steps without the terminator ever evaluating the score
+- `SectionInception.memory_size` and `sample_size` are now bounded `ge=1`; a new cross-field validator ensures `sample_size ≤ memory_size`; `inception.smiles_file` now uses `ExistingFilePath`
+- All `getattr(module, dynamic_name)` calls that previously raised a bare `AttributeError` on unknown model types now use a guarded pattern and raise a `RuntimeError` with a clear message: `run_staged_learning` (RL learning class), `run_transfer_learning` (TL runner class, now also reports when a model type has no TL implementation), `setup_sampler` (sampler class), `get_pair_generator` (Mol2Mol pair generator)
+- Empty SMILES result from `read_smiles_csv_file` is now treated as a fatal error in both RL (`run_staged_learning`) and sampling (`run_sampling`); previously an empty file silently disabled SMILES conditioning (RL) or generated zero molecules (sampling) without any warning
+
+
+## [4.9.17] 2026-10-09
+
+### Changed
+
+- `prior_file`, `agent_file` (RL), `input_model_file`, `smiles_file`, `validation_smiles_file` (TL), `model_file`, `smiles_file` (sampling), `smiles_file`, `amino_acid_library_file` (enumeration), and `transform_file` (data pipeline) are now validated to exist on disk at config-parse time via the new `ExistingFilePath` annotated type; missing files are caught before the run starts
+- `output_model_file` (TL) and `chkpt_file` (RL stage) use a new `WritableFilePath` annotated type that checks the parent directory exists before the run begins, preventing a late `FileNotFoundError` during checkpoint save
+- `SectionStage.termination` is now `Literal["simple", "null", "plateau"]`; invalid termination strings are rejected at validation time
+- `clip_gradient_norm` (TL) is now bounded `ge=0.0`; `batch_size` (enumeration) is now bounded `ge=1`
+- `StepLRConfiguration` and `LambdaLRConfiguration` in TL gain `__post_init__` validation: `lr`, `min`, `gamma`, `step`, `beta1`, `beta2`, `eps`, `factor`, and `warmup` are all checked for valid ranges — notably `warmup=0` previously caused a silent `ZeroDivisionError` in the learning-rate lambda
+- Fixed dead error handler in `create_packages.py`: the `try/except KeyError` around the terminator `getattr` was unreachable (`getattr` raises `AttributeError`, not `KeyError`); replaced with a guarded `getattr(..., None)` check that reports valid choices
+
+
+## [4.9.16] 2026-10-09
+
+### Fixed
+
+- Corrected a `NameError` in the main entry point caused by a missing `import logging` statement
+- Eliminated duplicate error output when `--log-filename` is used: the terminal now shows a single `CRITICAL: <message>` line (no traceback); the log file receives the full timestamped entry with traceback. When no log file is configured both message and traceback appear on the terminal as before
+- Added `SuppressTracebackFormatter` to `reinvent.utils.logmon` — used on the stderr handler whenever a log file is also active — so tracebacks are never forwarded to the terminal by the logging system itself
+
+
+## [4.9.15] 2026-10-09
+
+### Added
+
+- New `reinvent.utils.errors` module with two shared helpers — `fatal()` and `format_validation_error()` — used by both entry points to separate user-facing messages from developer tracebacks
+
+### Changed
+
+- Both `reinvent` and `reinvent_datapre` entry points now validate the config file path and the log-file parent directory before attempting to open them, producing a clear message instead of a raw `FileNotFoundError`
+- Unhandled exceptions in both entry points are now caught and routed through `fatal()`: pydantic `ValidationError` is reformatted into readable `[field] message (got: value)` lines; `FileNotFoundError`, `ValueError`, and `RuntimeError` show a one-line message; any other exception shows a minimal message and instructs the user to check the log file. The full traceback is written only to the log file, not to the terminal.
+
+
+## [4.9.14] 2026-10-09
+
+### Changed
+
+- When a log file is specified with `--log-filename`, a second stderr handler is now always attached at `WARNING` level with a plain `LEVEL: message` format. Fatal errors and warnings are therefore always visible in the terminal even when all detailed output is redirected to a log file. This applies to both the main `reinvent` entry point and `reinvent_datapre`.
+
+
+## [4.9.13] 2026-10-09
+
+### Changed
+
+- `run_type` in the top-level config is now validated against the set of known run modes (`sampling`, `staged_learning`, `transfer_learning`, `scoring`, `enumeration`); an unknown value now produces a clear error message listing valid choices instead of a bare `AttributeError`
+- `device` is now validated at config-parse time against recognised PyTorch device strings (`cpu`, `cuda`, `mps`, `xpu` for Intel ARC, each with optional index); an invalid value is rejected immediately with a descriptive message
+- `version` is now a declared config field (default: current config version) so that the version check always fires and a typo'd key is rejected by the `extra="forbid"` guard
+- RL `batch_size` is now bounded (`ge=1`); `temperature` is bounded (`gt=0.0`) in both RL and sampling configs
+- `sample_strategy` in RL and sampling configs is now a `Literal["multinomial", "beamsearch"]`; invalid strategies are rejected at validation time
+- RL learning-strategy `type` is now a `Literal` of known strategy names (`dap`, `sdap`, `mauli`, `mascof`, and `_reinforce` variants)
+- RL diversity-filter `type` is now a `Literal` of known filter class names; intrinsic-penalty `type` and `penalty_function` are similarly constrained
+- Sampling `num_smiles` is now bounded (`ge=1`)
+- Data-pipeline `FilterSection` now validates that `min_heavy_atoms` is strictly less than `max_heavy_atoms`
+
+
+## [4.9.12] 2026-10-05
+
+### Fixed
+
+- Fixed order of components in PMI component
+
+
+## [4.9.11] 2026-09-21
+
+### Added
+
+- Dynamic filter components: any scoring component can be promoted to a filter at runtime by setting `filter = true` in the component config block together with a step-type transform (`left_step`, `right_step`, `step`). The component runs in the filter pass (before scorers), gates downstream computation via the validity mask, and is reported in the output CSV but excluded from aggregation.
+
+
+## [4.9.10] 2026-09-20
+
+### Fixed
+
+- Fixed potential issue with nan and valid masks being applied sequentially in reward.py
+
+
+## [4.9.9] 2026-09-02
+
+### Fixed
+
+- Chained actions and specific token check in read\_smiles\_csv\_file()
+- Fixed import unavailable on Windows
+
+
+## [4.9.8] 2026-09-02
+
+### Fixed
+
+- Stereochemistry safety to diversity filter
+
+
+## [4.9.7] 2026-08-21
+
+### Fixed
+
+- Improved CSV header writeout robustness for metadata columns which lead to malformed csvs in certain scenarios
+
+
+## [4.9.6] 2026-08-18
+
+### Added
+
+- Fingerprint precedence based scoring component along with support script for creation of databases, in the same vein as ring precedence 
+
+
+## [4.9.5] 2026-08-05
+
+### Changed
+
+- Reworked run\_staged\_learning.py to allow dynamic building of configuratioms
+
+
+## [4.9.4] 2026-07-01
+
+### Fixed
+
+- Loading a model checkpoint that was saved with a V1-to-V2 promoted metadata dict (e.g. an agent trained from a prior without metadata) no longer raises `TypeError: ModelMetaDataV2.__init__() got an unexpected keyword argument 'origina_data_source'`. The V1 field `origina_data_source` is now renamed to `original_data_source` and the obsolete `updates`/`comments` lists are merged into `update_log` both when saving (`update_model_data_v2`) and when loading (`check_metadata`).
+
+
+## [4.9.3] 2026-06-27
+
+### Added
+
+- Read stereochemisry support flag from model file metadata in sampling runmode
+
+
+## [4.9.2] 2026-06-24
+
+### Removed
+
+- Removed SSH mount in the dockerfile for reinvent-scoring-plugins build per new security policy
+
+
+## [4.9.1] 2026-06-24
+
+### Added
+
+- Aggregation parameter (mean, min, max) for TanimotoSimilarity scoring component to control how scores from multiple reference fingerprints are combined (default: max)
+- Validation check in compute_scores to ensure components return exactly the declared number of score arrays (number_of_endpoints), preventing malformed CSV output
+
+
+## [4.9.0] 2026-06-24
+
+### Changed
+
+- New metadata format including supporting tools
+
+
+## [4.8.25] 2026-06-24
+
+### Removed
+
+- uv.lock in internal repository as not needed
+
+
 ## [4.8.24] 2026-06-10
 
 ### Added
@@ -14,7 +384,7 @@ This follows the guideline on [keep a changelog](https://keepachangelog.com/)
 
 ### Changed
 
-- Removed obsolete features: use_cuda, unique_sequence
+- Removed obsolete features: use\_cuda, unique\_sequence
 
 
 ## [4.8.22] 2026-06-03
@@ -84,7 +454,7 @@ This follows the guideline on [keep a changelog](https://keepachangelog.com/)
 
 ### Changed
 
-- support for chemistry for classical (RNN) Reinvent prior
+- stereochemistry support for classical (RNN) Reinvent prior
 
 
 ## [4.8.12] 2026-05-07

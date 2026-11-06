@@ -106,6 +106,17 @@ def compute_component_scores(
             logger.critical(msg)
             raise RuntimeError(msg)
 
+        expected_endpoints = getattr(scoring_function, "number_of_endpoints", 1)
+        if len(_results.scores) != expected_endpoints:
+            msg = (
+                f"Scoring component {type(scoring_function).__name__} returned "
+                f"{len(_results.scores)} score arrays but declared "
+                f"number_of_endpoints={expected_endpoints}. "
+                f"Ensure the component returns exactly one score array per endpoint."
+            )
+            logger.critical(msg)
+            raise RuntimeError(msg)
+
         component_results = SmilesAssociatedComponentResults(
             component_results=_results, smiles=index_smiles_to_score
         )
@@ -117,6 +128,10 @@ def compute_component_scores(
         component_results = SmilesAssociatedComponentResults.create_from_scores(
             smiles=[], scores=[[]]
         )
+
+    declared_keys = getattr(scoring_function, "metadata_keys", ())
+    if declared_keys:
+        component_results._declared_metadata_keys = declared_keys
 
     if use_cache and len(cache_hits) > 0:  # update the results
         for smiles in cache_hits:
@@ -133,6 +148,7 @@ def compute_component_scores(
         )
 
     return component_results
+
 
 def compute_transform(
     component_type,
@@ -154,7 +170,7 @@ def compute_transform(
     :returns: dataclass with transformed results
     """
 
-    names, scoring_function, transforms, weights = params
+    names, scoring_function, transforms, weights, loss_modulation_flags = params
 
     component_results = compute_component_scores(
         smilies, scoring_function, cache, valid_mask, index_smiles
@@ -167,7 +183,6 @@ def compute_transform(
         missing_scores = [smiles for smiles in index_smiles if smiles not in component_results.data]
     else:
         missing_scores = [smiles for smiles in smilies if smiles not in component_results.data]
-
     if missing_scores:
         raise RuntimeError(f"Missing scores for {component_type} for {missing_scores}")
 
@@ -196,9 +211,29 @@ def compute_transform(
             transformed_scores.append(transformed * valid_mask)
 
     if use_pumas:
-        transform_types= [transform.name if transform else None for transform in transforms]
+        transform_types = [transform.name if transform else None for transform in transforms]
     else:
         transform_types = [transform.params.type if transform else None for transform in transforms]
+
+    # Loss modulation: keep the component's relevance for endpoints that opted in.
+    # Relevance is left as-is for valid SMILES and NaN elsewhere so it stays neutral downstream.
+    relevance = None
+    if any(loss_modulation_flags):
+        fetched = component_results.fetch_relevance(
+            smiles=index_smiles if index_smiles is not None else smilies, transpose=True
+        )
+
+        if fetched is not None:
+            relevance = []
+            for i, flag in enumerate(loss_modulation_flags):
+                if flag and i < len(fetched):
+                    arr = np.asarray(fetched[i], dtype=float)
+                    relevance.append(np.where(valid_mask, arr, np.nan))
+                else:
+                    relevance.append(None)
+
+            if all(c is None for c in relevance):
+                relevance = None
 
     transform_result = TransformResults(
         component_type,
@@ -207,6 +242,7 @@ def compute_transform(
         transformed_scores,
         component_results,
         weights,
+        relevance,
     )
 
     return transform_result

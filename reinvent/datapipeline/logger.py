@@ -6,6 +6,8 @@ import logging
 import logging.handlers
 from typing import TextIO
 
+from reinvent.utils.logmon import SuppressTracebackFormatter
+
 FORMATTER = logging.Formatter(
     fmt="%(asctime)s <%(levelname)-4.4s> %(message)s",
     datefmt="%H:%M:%S",
@@ -37,14 +39,21 @@ def setup_sp_logger(
         logger.removeHandler(handler)
 
     if filename:
-        handler = logging.FileHandler(filename, mode="w")
+        file_handler = logging.FileHandler(filename, mode="w")
+        file_handler.setFormatter(FORMATTER)
+        file_handler.setLevel(level)
+        logger.addHandler(file_handler)
+
+        stderr_handler = logging.StreamHandler(sys.stderr)
+        stderr_handler.setLevel(logging.WARNING)
+        stderr_handler.setFormatter(SuppressTracebackFormatter("%(levelname)s: %(message)s"))
+        logger.addHandler(stderr_handler)
     else:
         handler = logging.StreamHandler(stream)
+        handler.setFormatter(FORMATTER)
+        handler.setLevel(level)
+        logger.addHandler(handler)
 
-    handler.setFormatter(FORMATTER)
-    handler.setLevel(level)
-
-    logger.addHandler(handler)
     logger.propagate = propagate
 
     return logger

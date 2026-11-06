@@ -1,17 +1,16 @@
-from typing import List, Optional, Tuple
-
 import logging
-
+import time
 from copy import deepcopy
+from typing import List
 
 import numpy as np
 import torch
 
-from .intrinsic_penalty import IntrinsicPenalty
-
 from reinvent.models.model_factory.sample_batch import SampleBatch
-
 from reinvent.runmodes import create_adapter
+from reinvent.runmodes.RL.memories.utils.diversity_results import DiversityResults
+
+from .intrinsic_penalty import IntrinsicPenalty
 
 logger = logging.getLogger(__name__)
 
@@ -75,8 +74,12 @@ class IdenticalMurckoScaffoldRND(IntrinsicPenalty):
         smilies: List[str],
         mask: np.ndarray,
         sampled: SampleBatch,
-    ) -> List:
+    ) -> DiversityResults:
         """Compute the score and add intrinsic rewards based on RND."""
+
+        prev_scores = np.copy(scores)
+
+        start = time.time()
 
         assert len(smilies) == len(
             sampled.items2
@@ -91,7 +94,19 @@ class IdenticalMurckoScaffoldRND(IntrinsicPenalty):
 
         self._add_intrinsic_reward(sampled, scores, active_idxs)
 
-        return scaffolds
+        end = time.time()
+
+        return DiversityResults(
+            runtime=end - start,
+            scaffolds=scaffolds,
+            memory_size=len(self.smiles_memory),
+            bucket_max_size=self.bucket_size,
+            num_full_buckets=self.scaffold_memory.count_full(),
+            num_total_buckets=len(self.scaffold_memory),
+            num_active=len(active_idxs),
+            intrinsic_reward=float(np.sum(scores - prev_scores)),
+            mean_extrinsic_score=prev_scores.mean(),
+        )
 
     def _calculate_novelty_reinvent(
         self, sampled: SampleBatch, scores: np.ndarray, active_idxs: List[int]

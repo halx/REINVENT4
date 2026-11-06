@@ -42,6 +42,7 @@ logger = logging.getLogger("reinvent")
 @add_tag("__component")
 class SynthSense:
     def __init__(self, params: Parameters):
+        self.metadata_keys = ("starting_materials", "route_signature")
         self.params = params
         self.smiles_type = "rdkit_smiles"  # For the normalizer.
         logger.info("Initializing synthsense")

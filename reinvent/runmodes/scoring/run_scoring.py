@@ -13,6 +13,7 @@ import logging
 from typing import List, Tuple, Callable
 
 import numpy as np
+from rdkit import Chem
 
 from reinvent.scoring.scorer import Scorer
 from reinvent.chemistry.standardization.filter_types_enum import FilterTypesEnum
@@ -53,7 +54,11 @@ def run_scoring(input_config: dict, write_config: str = None, *args, **kwargs) -
     actions = setup_actions(standardize=standardize)
     reader = read_data(smiles_filename, actions=actions, smiles_column=smiles_column)
 
-    mask = np.array([True if smiles else False for smiles in reader.smilies])
+    mask = np.array([bool(smiles and Chem.MolFromSmiles(smiles)) for smiles in reader.smilies])
+    n_invalid = int(np.sum(~mask))
+
+    if n_invalid:
+        logger.warning(f"{n_invalid} SMILES could not be parsed by RDKit and will be skipped")
 
     scoring_function = Scorer(config.scoring)
 
@@ -188,12 +193,13 @@ def read_data(filename: str, actions: ACTION_CALLABLES, smiles_column: str) -> T
     :returns: a reader object containing the read data
     """
 
-    if filename.endswith(".csv"):
+    lower = filename.lower()
+    if lower.endswith(".csv"):
         header = True
-    elif filename.endswith(".smi"):
+    elif lower.endswith(".smi"):
         header = False
     else:
-        raise RuntimeError(f"Unknown file format: {filename}")
+        raise RuntimeError(f"Unknown file format: {filename} (expected .csv or .smi)")
 
     reader = TabFileReader(filename, header=header, actions=actions, smiles_column=smiles_column)
     reader.read()

@@ -2,7 +2,7 @@
 
 __all__ = ["__version__", "__maintainer__", "__email__", "__copyright__"]
 __progname__ = "REINVENT"
-__version__ = "4.8.24"
+__version__ = "4.9.34"
 __authors__ = [
     "Hannes H Loeffer",
     "Jiazhen He",

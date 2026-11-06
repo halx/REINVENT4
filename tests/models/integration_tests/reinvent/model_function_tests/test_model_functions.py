@@ -105,7 +105,6 @@ class TestReinventModelFunctions(unittest.TestCase):
                 "version",
                 "metadata",
                 "vocabulary",
-                "tokenizer",
                 "max_sequence_length",
                 "network",
                 "network_params",

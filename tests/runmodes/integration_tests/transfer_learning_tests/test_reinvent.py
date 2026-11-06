@@ -5,7 +5,7 @@ import torch
 
 from reinvent.runmodes.TL.run_transfer_learning import run_transfer_learning
 from reinvent.runmodes.utils.helpers import set_torch_device
-from reinvent.models.meta_data import check_valid_hash
+from reinvent.models.meta_data2 import check_valid_hash_dispatch as check_valid_hash
 
 
 @pytest.fixture
@@ -51,7 +51,6 @@ def test_transfer_learning(setup, tmp_path, pytestconfig):
         "model_type",
         "network",
         "network_params",
-        "tokenizer",
         "version",
         "vocabulary",
     ]

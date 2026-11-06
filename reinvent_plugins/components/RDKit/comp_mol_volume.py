@@ -44,7 +44,7 @@ class MolVolume:
                 else:
                     try:
                         mol3d = Chem.AddHs(mol)  # will not consider protonation state
-                        Chem.EmbedMolecule(mol3d, randomSeed=0xf00d)
+                        Chem.EmbedMolecule(mol3d)
                         volume = Chem.ComputeMolVolume(
                             mol3d, gridSpacing=grid_spacing, boxMargin=box_margin
                         )

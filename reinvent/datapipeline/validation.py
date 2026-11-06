@@ -1,7 +1,8 @@
 """Config Validation"""
 
 from typing import Optional
-from pydantic import Field, BaseModel, ConfigDict
+from pydantic import Field, BaseModel, ConfigDict, model_validator
+from reinvent.validation import ExistingFilePath
 
 
 class GlobalConfig(BaseModel):
@@ -26,6 +27,15 @@ class FilterSection(GlobalConfig):
     report_errors: bool = False
     inchi_key_deduplicate: bool = False
 
+    @model_validator(mode="after")
+    def check_atom_count_range(self) -> "FilterSection":
+        if self.min_heavy_atoms >= self.max_heavy_atoms:
+            raise ValueError(
+                f"min_heavy_atoms ({self.min_heavy_atoms}) must be less than "
+                f"max_heavy_atoms ({self.max_heavy_atoms})"
+            )
+        return self
+
 
 class DPLConfig(GlobalConfig):
     input_csv_file: str
@@ -35,4 +45,4 @@ class DPLConfig(GlobalConfig):
     num_procs: Optional[int] = Field(1, ge=1)
     chunk_size: Optional[int] = Field(500, ge=1)
     filter: Optional[FilterSection] = None
-    transform_file: Optional[str] = None
+    transform_file: Optional[ExistingFilePath] = None

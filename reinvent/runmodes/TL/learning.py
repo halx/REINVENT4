@@ -34,7 +34,7 @@ from reinvent.runmodes.TL.reports import TLTBReporter, TLRemoteReporter, TLRepor
 from reinvent.utils.logmon import get_reporter
 from reinvent.runmodes.setup_sampler import setup_sampler
 from reinvent.runmodes.utils.tensorboard import SummaryWriter  # monkey patch
-from reinvent.models.meta_data import update_model_data
+from reinvent.models.meta_data2 import update_model_data_v2
 from reinvent.models.model_factory.sample_batch import SmilesState
 from reinvent.runmodes.utils import mutual_similarities, internal_diversity
 
@@ -282,7 +282,7 @@ class Learning(ABC):
         path = f"{self._config.output_model_file}{suffix}"
 
         model_dict = self.model.get_save_dict()
-        save_dict = update_model_data({**model_dict}, comment="TL")
+        save_dict = update_model_data_v2({**model_dict}, comment="TL")
         torch.save(save_dict, path)
 
         return path

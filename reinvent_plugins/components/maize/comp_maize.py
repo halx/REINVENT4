@@ -188,6 +188,7 @@ class Maize:
     """Scoring component for the Maize workflow manager"""
 
     def __init__(self, params: Parameters):
+        self.metadata_keys = ("Maize ID",)
         # We only allow one call to maize and one, single workflow per component
         self.executable = os.path.abspath(params.executable[0])
         self.workflow = os.path.abspath(params.workflow[0])
@@ -258,7 +259,7 @@ class Maize:
                     for _ in self.properties:
                         all_scores.append(np.full(len(smilies), 0.0, dtype=np.float32))
 
-                    return ComponentResults(scores=all_scores, metadata={"Maize ID": [None] * len(smilies)})
+                    return ComponentResults(scores=all_scores, metadata={self.metadata_keys[0]: [None] * len(smilies)})
                 raise
 
             data = wait_for_output(out_filename)
@@ -273,4 +274,4 @@ class Maize:
                 all_scores.append(scores)
 
         maize_ids = data.get("names", [None] * len(smilies))
-        return ComponentResults(scores=all_scores, metadata={"Maize ID": maize_ids})
+        return ComponentResults(scores=all_scores, metadata={self.metadata_keys[0]: maize_ids})

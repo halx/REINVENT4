@@ -93,6 +93,26 @@ deprecated alias.
 | `radius`      | Morgan fingerprint radius.                                          |
 | `use_counts`  | If `true`, use count fingerprints.                                  |
 | `use_features`| If `true`, use pharmacophore-like features.                         |
+| `aggregation` | `"max"` (default), `"mean"`, or `"min"` over the reference set.    |
+
+Multiple endpoints are supported; each endpoint defines its own reference set
+and fingerprint settings.
+
+
+### PathFPSimilarity
+
+Tanimoto similarity using RDKit path-based (topological) fingerprints
+(`RDKFingerprint`).  Path fingerprints enumerate all linear bond paths up to
+`max_path` bonds, capturing chain and path-based structural features differently
+from circular Morgan fingerprints.
+
+| Parameter     | Default | Description                                                      |
+|---------------|---------|------------------------------------------------------------------|
+| `smiles`      | required| List of reference SMILES to compare against.                     |
+| `min_path`    | required| Minimum path length in bonds.                                    |
+| `max_path`    | required| Maximum path length in bonds.                                    |
+| `n_bits`      | required| Fingerprint bit-vector size.                                     |
+| `aggregation` | `"max"` | `"max"`, `"mean"`, or `"min"` over the reference set.           |
 
 Multiple endpoints are supported; each endpoint defines its own reference set
 and fingerprint settings.
@@ -440,6 +460,19 @@ Computes `exp(-k * x)`.  Values < 0 are clamped to 1.0.
 | Parameter | Description                     |
 |-----------|---------------------------------|
 | `k`       | Decay rate constant (must > 0). |
+
+
+### `symmetric_exponential_decay`
+
+Computes `exp(-k * |x - target|)`.  Peaks at exactly 1.0 when x equals
+`target` and decays symmetrically in both directions.  Use this instead of
+`exponential_decay` when you want to reward values *close to* a specific
+target rather than penalise values above zero.
+
+| Parameter | Default | Description                                          |
+|-----------|---------|------------------------------------------------------|
+| `target`  | required| Reference value at which the score equals 1.0.       |
+| `k`       | `1.0`   | Decay rate constant (must > 0); larger k = narrower peak. |
 
 
 ### `value_mapping`
